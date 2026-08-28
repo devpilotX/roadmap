@@ -1,0 +1,152 @@
+/* ==================================================================
+   tokens.css | every colour, size and duration in the application
+   ==================================================================
+   Rules that govern this file:
+     - Blue is the only default accent.
+     - Green, orange and red carry fixed meaning: done, attention, missed.
+       They are never decorative, and never the only signal.
+     - Nothing outside this file may contain a raw colour value.
+   ================================================================== */
+
+:root {
+  /* ---- ink and surfaces, light ---- */
+  --ink: #2C2C2B;
+  --muted: #7D7A75;
+  --canvas: #FFFFFF;
+  --soft: #F9F8F7;
+  --surface: #F0EFED;
+  --border: #E6E5E3;
+
+  /* ---- meaning ---- */
+  --blue: #2783DE;
+  --blue-soft: #E5F2FC;
+  --green: #46A171;
+  --green-soft: #E8F1EC;
+  --orange: #D5803B;
+  --orange-soft: #FBEBDE;
+  --red: #E56458;
+  --red-soft: #FCE9E7;
+
+  /* ---- shape ---- */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --gap: 16px;
+
+  /* ---- type ---- */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text: 15px;
+  --text-md: 17px;
+  --text-lg: 21px;
+  --text-xl: 26px;
+  --text-2xl: 32px;
+  --text-3xl: 44px;
+  --text-4xl: 56px;
+
+  --leading: 1.55;
+  --leading-tight: 1.2;
+  --measure: 70ch;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- 8px spacing scale ---- */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+
+  /* ---- layout ---- */
+  --sidebar-w: 240px;
+  --bottombar-h: 60px;
+  --tap: 44px;
+  --content-max: 1180px;
+
+  /* ---- motion, 120 ms and nothing longer ---- */
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --dur: 120ms;
+
+  /* ---- depth, used sparingly ---- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.14);
+
+  /* ---- phase colours, A to F, in that order ---- */
+  --phase-a: #5E9FE8;
+  --phase-b: #EAC26B;
+  --phase-c: #72BC8F;
+  --phase-d: #BF8EDA;
+  --phase-e: #DE9255;
+  --phase-f: #DF84A8;
+
+  --focus-ring: 0 0 0 2px var(--canvas), 0 0 0 4px var(--blue);
+  --scrim: rgba(24, 24, 24, 0.38);
+}
+
+/* ---- dark, by system preference unless the user chose light ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ink: #FFFFFF;
+    --muted: rgba(255, 255, 255, 0.65);
+    --canvas: #191919;
+    --soft: #202020;
+    --surface: #383836;
+    --border: rgba(255, 255, 255, 0.20);
+
+    --blue: #5E9FE8;
+    --blue-soft: rgba(94, 159, 232, 0.16);
+    --green: #72BC8F;
+    --green-soft: rgba(114, 188, 143, 0.16);
+    --orange: #DE9255;
+    --orange-soft: rgba(222, 146, 85, 0.16);
+    --red: #E97366;
+    --red-soft: rgba(233, 115, 102, 0.16);
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.55);
+    --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.7);
+    --scrim: rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ---- dark, chosen explicitly ---- */
+:root[data-theme='dark'] {
+  --ink: #FFFFFF;
+  --muted: rgba(255, 255, 255, 0.65);
+  --canvas: #191919;
+  --soft: #202020;
+  --surface: #383836;
+  --border: rgba(255, 255, 255, 0.20);
+
+  --blue: #5E9FE8;
+  --blue-soft: rgba(94, 159, 232, 0.16);
+  --green: #72BC8F;
+  --green-soft: rgba(114, 188, 143, 0.16);
+  --orange: #DE9255;
+  --orange-soft: rgba(222, 146, 85, 0.16);
+  --red: #E97366;
+  --red-soft: rgba(233, 115, 102, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(0, 0, 0, 0.6);
+}
+
+/* Motion is a preference, not a decoration. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 1ms;
+  }
+}

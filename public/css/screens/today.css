@@ -1,0 +1,163 @@
+/* ==================================================================
+   screens/today.css
+   The now card is the largest thing on the screen. The number that
+   matters is the largest text inside it.
+   ================================================================== */
+
+.todaystrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--s3);
+  padding: var(--s4);
+  margin-bottom: var(--gap);
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.todaystrip__item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.todaystrip__item .stat__value {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: 1.05;
+}
+
+.todaystrip__item .stat__label {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ block cards */
+
+.tasktext {
+  margin: 0 0 var(--s3);
+  max-width: var(--measure);
+}
+
+.tasktext--big {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+/* .bigrow moved to components.css: /calendar uses the same row. */
+
+.card--now .stat__value--lg {
+  font-size: var(--text-3xl);
+}
+
+/* .videorow moved to components.css: /stats lists the days that went over the
+ * 30 minute cap using the same row. */
+
+.resttitle {
+  font-size: var(--text-3xl);
+  margin-bottom: var(--s2);
+}
+
+.restbody {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  max-width: var(--measure);
+}
+
+.gatetitle {
+  font-size: var(--text-2xl);
+  margin-bottom: var(--s2);
+}
+
+/* ------------------------------------------------------- condition list */
+
+.condlist {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.cond {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-start;
+  margin: 0;
+  max-width: none;
+}
+
+.cond__icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  stroke-width: 1.9;
+  stroke: currentColor;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cond--met {
+  color: var(--green);
+}
+
+.cond--unmet {
+  color: var(--muted);
+}
+
+.cond__label {
+  display: block;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.cond--met .cond__label {
+  color: var(--muted);
+}
+
+.cond__detail {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+/* Collapsed links inside a compact block card. */
+.linkacc {
+  margin-top: var(--s3);
+  background: var(--soft);
+}
+
+.linkacc .acc__summary {
+  font-size: var(--text-sm);
+  color: var(--blue);
+  font-weight: var(--weight-semibold);
+}
+
+.linkacc .acc__summary svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: currentColor;
+}
+
+.linkacc .linkrow {
+  border-bottom-color: var(--border);
+}
+
+@media (max-width: 768px) {
+  .todaystrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bigrow {
+    gap: var(--s5);
+  }
+  .card--now {
+    padding: var(--s4);
+  }
+  .card--now .stat__value--lg {
+    font-size: var(--text-2xl);
+  }
+}

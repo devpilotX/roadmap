@@ -1,0 +1,14 @@
+.branchcard {
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  display: grid;
+  gap: var(--s2);
+}
+
+.branchcard__letter {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}

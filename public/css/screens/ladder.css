@@ -1,0 +1,19 @@
+/* ladder.css | /ladder
+ *
+ * The unlock ladder is drawn with the shared .milestone list, which /newzealand
+ * uses as well. Because head.ejs loads only one screens/*.css per page, that
+ * list lives in components.css rather than here, otherwise the New Zealand
+ * timeline would be unstyled.
+ *
+ * Everything else this screen needs is a shared component: .rolechip for the
+ * role codes, .table for the DSA thresholds and the resume stages, .callout for
+ * the line about eligible not meaning advised.
+ *
+ * This file is intentionally almost empty. It is not dead: the page requests it,
+ * and it is where a rule belongs if it is ever only true on /ladder.
+ */
+
+/* The ladder is long, so the numbers stay legible against the markers. */
+.acc .milestone:first-child {
+  padding-top: 0;
+}

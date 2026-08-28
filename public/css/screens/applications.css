@@ -1,0 +1,13 @@
+/* .funnelbar and .funnelbar__row moved to components.css: /stats draws the same
+ * funnel, and only one screens/*.css is loaded per page. */
+
+.appcounter {
+  display: grid;
+  gap: var(--s2);
+}
+
+.appcounter__value {
+  font-size: var(--text-4xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}

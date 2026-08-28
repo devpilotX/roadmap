@@ -1,0 +1,31 @@
+.gatecard {
+  padding: var(--s5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  display: grid;
+  gap: var(--s3);
+}
+
+.gatecard--passed {
+  border-left: 3px solid var(--green);
+}
+
+.gatecard--overdue {
+  border-left: 3px solid var(--red);
+}
+
+.gatecard--soon {
+  border-left: 3px solid var(--orange);
+}
+
+.gatecard__no {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+}
+
+.gatecard__days {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}

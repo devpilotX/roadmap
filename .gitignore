@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Secrets. .env.example is committed and carries no real values.
+.env
+.env.local
+.env.production
+
+# Backups, dumps and exports. These are data, not source.
+backups/
+*.sql.gz
+export-*/
+digest-*.md
+
+# A local MySQL, if one is unpacked next to the project
+.localdb/
+
+# Editor and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Generated SQL from the parser is committed on purpose: migrations/*.sql is the
+# reviewable output of scripts/seed-from-md.mjs, and a diff on it is how a change
+# to final.md becomes visible. Nothing here excludes it.

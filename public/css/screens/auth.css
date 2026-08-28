@@ -1,0 +1,25 @@
+/* ==================================================================
+   screens/auth.css | sign in and sign up
+   A single centred card. No social buttons, by design.
+   ================================================================== */
+
+/* .pwwrap moved to components.css: /profile uses it for the password field too. */
+
+.authcard__alt {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.authcard .page-head__title {
+  margin-bottom: var(--s1);
+}
+
+.authcard > .muted {
+  margin-bottom: var(--s5);
+}
+
+.authcard .field:last-of-type {
+  margin-bottom: var(--s5);
+}

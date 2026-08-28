@@ -1,0 +1,48 @@
+.statsection {
+  padding: var(--s5);
+}
+
+.hourbar {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: var(--s3);
+  align-items: center;
+  font-size: var(--text-xs);
+}
+
+.hourbar__track {
+  display: flex;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.hourbar__seg {
+  height: 100%;
+}
+
+.hourbar__seg--DSA { background: var(--blue); }
+.hourbar__seg--LEARN { background: var(--green); }
+.hourbar__seg--BUILD { background: var(--phase-d); }
+.hourbar__seg--CLOSE { background: var(--phase-b); }
+.hourbar__seg--MONEY { background: var(--orange); }
+.hourbar__seg--NIGHT { background: var(--muted); }
+
+.colourstrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.colourstrip__day {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.colourstrip__day--green { background: var(--green); }
+.colourstrip__day--amber { background: var(--orange); }
+.colourstrip__day--red { background: var(--red); }
+.colourstrip__day--neutral { background: var(--border); }

@@ -1,0 +1,25 @@
+{
+  "source": "Striver A2Z DSA Course Sheet, the 18 step structure published at takeuforward.org/dsa/strivers-a2z-sheet-learn-dsa-a-to-z",
+  "note": "final.md names the sheet and its 474 problem split (152 easy, 186 medium, 136 hard) in C14 but does not list the steps. Only the step names live here. Problem names are never invented: they arrive through scripts/import-dsa.mjs from a real tracker export.",
+  "verified_on": "2026-08-27",
+  "topics": [
+    { "ord": 1, "name": "Learn the basics" },
+    { "ord": 2, "name": "Learn Important Sorting Techniques" },
+    { "ord": 3, "name": "Solve Problems on Arrays" },
+    { "ord": 4, "name": "Binary Search" },
+    { "ord": 5, "name": "Strings" },
+    { "ord": 6, "name": "Learn LinkedList" },
+    { "ord": 7, "name": "Recursion" },
+    { "ord": 8, "name": "Bit Manipulation" },
+    { "ord": 9, "name": "Stack and Queues" },
+    { "ord": 10, "name": "Sliding Window and Two Pointer Combined Problems" },
+    { "ord": 11, "name": "Heaps" },
+    { "ord": 12, "name": "Greedy Algorithms" },
+    { "ord": 13, "name": "Binary Trees" },
+    { "ord": 14, "name": "Binary Search Trees" },
+    { "ord": 15, "name": "Graphs" },
+    { "ord": 16, "name": "Dynamic Programming" },
+    { "ord": 17, "name": "Tries" },
+    { "ord": 18, "name": "Strings, advanced" }
+  ]
+}

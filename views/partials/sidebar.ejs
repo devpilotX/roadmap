@@ -1,0 +1,54 @@
+<aside class="sidebar" aria-label="Main navigation">
+  <a class="sidebar__brand" href="/">
+    <span class="sidebar__mark" aria-hidden="true">RT</span>
+    <span>
+      <span class="sidebar__title">The Roadmap Tracker</span>
+      <span class="sidebar__sub">28 Aug 2026 to 24 Jan 2027</span>
+    </span>
+  </a>
+
+  <nav class="sidebar__nav">
+    <% nav.forEach(function (group) { %>
+    <div class="navgroup">
+      <h2 class="navgroup__label"><%= group.group %></h2>
+      <ul class="navgroup__list">
+        <% group.items.forEach(function (item) {
+             const active = item.href === '/' ? currentPath === '/' : (currentPath === item.href || currentPath.indexOf(item.href + '/') === 0); %>
+        <li>
+          <a class="navlink" href="<%= item.href %>" <%= active ? 'aria-current="page"' : '' %>>
+            <svg class="navlink__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="<%= item.icon %>"/></svg>
+            <span><%= item.label %></span>
+            <% if (item.href === '/' && locals.warningCount) { %>
+            <span class="navlink__badge" aria-label="<%= locals.warningCount %> active warnings"><%= locals.warningCount %></span>
+            <% } %>
+          </a>
+        </li>
+        <% }); %>
+      </ul>
+    </div>
+    <% }); %>
+  </nav>
+
+  <div class="sidebar__foot">
+    <% if (locals.user) { %>
+    <div class="row-tight text-sm">
+      <span class="truncate" title="<%= user.email %>"><%= user.display_name %></span>
+    </div>
+    <% } %>
+    <div class="row">
+      <button type="button" class="btn btn--sm btn--ghost" id="theme-toggle" aria-label="Change colour theme">
+        <svg class="btn__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
+        <span id="theme-label">System</span>
+      </button>
+      <% if (locals.user) { %>
+      <form method="post" action="/api/auth/logout" data-logout>
+        <input type="hidden" name="_csrf" value="<%= locals.csrfToken %>">
+        <button type="submit" class="btn btn--sm btn--ghost">Sign out</button>
+      </form>
+      <% } %>
+    </div>
+    <p class="text-xs muted" id="lastsynced" data-last-synced="<%= locals.lastSyncedAt || '' %>">
+      Last synced: never
+    </p>
+  </div>
+</aside>

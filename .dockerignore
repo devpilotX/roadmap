@@ -1,0 +1,37 @@
+# Nothing in here belongs in the image.
+#
+# node_modules is rebuilt by npm ci inside the build stage, because a native
+# module compiled on Windows or macOS will not load on Debian.
+
+node_modules
+npm-debug.log*
+
+# Secrets. .env.example is committed, .env never is, and it must never be baked
+# into a layer.
+.env
+.env.*
+!.env.example
+
+# Backups and exports are a volume, not image content.
+backups/
+*.sql.gz
+*.zip
+
+# Local database, editor and OS noise
+.localdb/
+.git
+.gitignore
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# The build prompt is reference material for a person, not for the runtime.
+# PARSE-REPORT, RUNBOOK and ADDITIONS are copied in, because the runbook is worth
+# having inside the container when something is wrong at 23:00.
+docs/BUILD-PROMPT.md
+
+Dockerfile
+docker-compose.yml
+.dockerignore

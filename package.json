@@ -1,0 +1,36 @@
+{
+  "name": "roadmap-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Roadmap Tracker. A personal career tracker seeded from final.md, for the window 28 August 2026 to 24 January 2027.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "parse": "node scripts/seed-from-md.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "verify": "node scripts/verify-seed.mjs",
+    "setup": "node scripts/seed-from-md.mjs && node scripts/migrate.mjs && node scripts/verify-seed.mjs",
+    "test": "node --test --test-reporter=spec tests/**/*.test.mjs",
+    "check-links": "node scripts/check-links.mjs",
+    "sync-github": "node scripts/sync-github.mjs",
+    "import-dsa": "node scripts/import-dsa.mjs",
+    "export-all": "node scripts/export-all.mjs",
+    "digest": "node scripts/weekly-digest.mjs",
+    "backup": "node scripts/backup.mjs"
+  },
+  "dependencies": {
+    "argon2": "0.44.0",
+    "ejs": "3.1.10",
+    "express": "5.1.0",
+    "express-mysql-session": "3.0.3",
+    "express-rate-limit": "8.6.2",
+    "express-session": "1.18.2",
+    "helmet": "8.1.0",
+    "mysql2": "3.15.3",
+    "zod": "4.1.11"
+  }
+}

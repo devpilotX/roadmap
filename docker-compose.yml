@@ -1,0 +1,141 @@
+# The Roadmap Tracker, app and database.
+#
+#   cp .env.example .env
+#   # then set, at minimum:
+#   #   DB_HOST=db
+#   #   DB_PASSWORD=<something real>
+#   #   SESSION_SECRET and TOKEN_ENC_KEY  (64 hex characters each)
+#   docker compose up --build
+#   docker compose exec app npm run setup      # parse, migrate, verify
+#
+# The app port is published on 127.0.0.1 only. Put nginx in front of it before
+# anything reaches the internet: there is no authentication on the port itself.
+# MySQL is not published at all; only the app network can reach it.
+
+name: roadmap-tracker
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command:
+      # utf8mb4 everywhere, and the same strict mode the pool sets per session,
+      # so a value the app would reject cannot arrive through the mysql client.
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+05:30
+      - --sql-mode=STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO
+      - --max-connections=50
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-roadmap_tracker}
+      MYSQL_USER: ${DB_USER:-roadmap}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      # The root password is separate from the application password on purpose.
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-${DB_PASSWORD}}
+      TZ: Asia/Kolkata
+    volumes:
+      - db-data:/var/lib/mysql
+    # No ports section. The database is reachable from the app service and from
+    # `docker compose exec db mysql`, and from nowhere else.
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${DB_ROOT_PASSWORD:-${DB_PASSWORD}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # These four override .env, because inside the compose network the host is
+      # the service name and the container must bind to all interfaces for the
+      # port mapping to work.
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      TZ: Asia/Kolkata
+      TRUST_PROXY: 1
+      BACKUP_DIR: /app/backups
+      MYSQLDUMP_BIN: mysqldump
+    ports:
+      # Localhost only. Change this and you have published an unauthenticated
+      # port to your network.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Dumps and exports survive a rebuild, which is the entire point of them.
+      - ./backups:/app/backups
+      # final.md is the source of truth for the seed. Mounting it read only means
+      # you can edit the document on the host and re-run npm run setup without a
+      # rebuild, and the container can never write to it.
+      - ./data/final.md:/app/data/final.md:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # The five cron jobs, as one long lived container rather than five.
+  # Start it explicitly:  docker compose --profile cron up -d cron
+  # It is a profile because a development machine rarely wants a backup at 02:30.
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    profiles: ["cron"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 3306
+      TZ: Asia/Kolkata
+      BACKUP_DIR: /app/backups
+      MYSQLDUMP_BIN: mysqldump
+    volumes:
+      - ./backups:/app/backups
+    # A plain loop, so there is no cron daemon to configure and the schedule is
+    # visible here. Each script logs to stdout, which is where the container log
+    # already is. Times are Asia/Kolkata because TZ is set above.
+    command:
+      - sh
+      - -c
+      - |
+        echo "cron worker started, timezone $$TZ"
+        while true; do
+          now=$$(date +%H%M)
+          case "$$now" in
+            0230) ./scripts/backup.sh || echo "backup failed" ;;
+            0310) node scripts/check-links.mjs || echo "link check failed" ;;
+            0340) node scripts/export-all.mjs || echo "export failed" ;;
+          esac
+          # Every 30 minutes, on the hour and the half hour.
+          case "$$now" in
+            *00|*30) node scripts/sync-github.mjs; code=$$?;
+                     [ "$$code" = "2" ] && echo "github rate limited, will retry" ;;
+          esac
+          # Saturday at 18:30, after the money hour.
+          if [ "$$(date +%u)" = "6" ] && [ "$$now" = "1830" ]; then
+            node scripts/weekly-digest.mjs --out=backups/digest-latest.md || echo "digest failed"
+          fi
+          sleep 60
+        done
+
+volumes:
+  db-data:

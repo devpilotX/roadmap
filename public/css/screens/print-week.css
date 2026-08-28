@@ -1,0 +1,57 @@
+.sheet {
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s6);
+  max-width: 900px;
+}
+
+.sheet__head {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.sheet__title {
+  font-size: var(--text-xl);
+}
+
+.sheet table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.sheet th,
+.sheet td {
+  border: 1px solid var(--border);
+  padding: var(--s2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sheet__box {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  .sheet {
+    border: 0;
+    padding: 0;
+    max-width: none;
+    break-after: page;
+  }
+  .page-head,
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,0 +1,74 @@
+.eligbanner {
+  padding: var(--s4) var(--s5);
+  border-radius: var(--radius);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.eligbanner--red {
+  background: var(--red-soft);
+  color: color-mix(in srgb, var(--red) 82%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.eligbanner--green {
+  background: var(--green-soft);
+  color: color-mix(in srgb, var(--green) 82%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+}
+
+.eligheadline {
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  max-width: 30ch;
+}
+
+.eligchips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s2);
+}
+
+.eligchip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--s3);
+  align-items: center;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+}
+
+.eligchip--weak {
+  border-style: dashed;
+}
+
+.exitcard {
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  display: grid;
+  gap: var(--s2);
+}
+
+.exitcard--costly {
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  background: var(--red-soft);
+}
+
+.exitcost {
+  font-weight: var(--weight-semibold);
+  color: color-mix(in srgb, var(--red) 82%, var(--ink));
+}
+
+/* .costheading moved to components.css: /newzealand uses it too. */
+
+@media (max-width: 640px) {
+  .eligheadline {
+    font-size: var(--text-xl);
+  }
+}
