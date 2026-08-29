@@ -143,6 +143,19 @@ export const config = {
   port: PORT,
   publicOrigin: str('PUBLIC_ORIGIN', `http://127.0.0.1:${PORT}`).replace(/\/+$/, ''),
   trustProxy: int('TRUST_PROXY', 0),
+  /**
+   * Login and signup attempts allowed, and the window they are counted in.
+   *
+   * Section 5.3 says 5 per 15 minutes, per address and per email, and those are the
+   * defaults. They are settable because with TRUST_PROXY=0 every caller shares one
+   * bucket, so five attempts at a form on your own machine locks you out for a
+   * quarter of an hour, and the message reads exactly like a broken application.
+   *
+   * Raising these weakens brute force protection. Leave them alone on anything
+   * reachable from the internet.
+   */
+  authRateLimitMax: Math.max(1, int('AUTH_RATE_LIMIT_MAX', 5)),
+  authRateLimitWindowMinutes: Math.max(1, int('AUTH_RATE_LIMIT_WINDOW_MINUTES', 15)),
   timezone: str('TIMEZONE', 'Asia/Kolkata'),
   /** A fixed date for the section 20.6 boundary tests. Null means the real clock. */
   fakeToday,

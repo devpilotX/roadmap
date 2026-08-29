@@ -74,8 +74,6 @@ export function resetRateLimits(): void {
   buckets().clear();
 }
 
-const FIFTEEN_MINUTES = 15 * 60 * 1000;
-
 /**
  * The client address.
  *
@@ -107,29 +105,59 @@ export function clientIp(request: Request): string {
   return 'local';
 }
 
+/**
+ * The login and signup limits.
+ *
+ * Section 5.3 sets these at 5 attempts per 15 minutes, per address and per email,
+ * and that is what ships. They are configurable because the message you get when
+ * you trip them is indistinguishable from the application being broken, and on a
+ * single machine with TRUST_PROXY=0 every caller shares one bucket, so testing a
+ * form five times locks you out of your own tracker for a quarter of an hour.
+ *
+ * Raising them weakens brute force protection. Do not raise them on anything
+ * reachable from the internet. Lowering them is always safe.
+ */
+const AUTH_MAX = config.authRateLimitMax;
+const AUTH_WINDOW_MS = config.authRateLimitWindowMinutes * 60 * 1000;
+
+/** "15 minutes", or "2 minutes", so the message always matches the setting. */
+const AUTH_WINDOW_TEXT = (() => {
+  const m = config.authRateLimitWindowMinutes;
+  if (m === 1) return '1 minute';
+  return `${m} minutes`;
+})();
+
 export const limiters = {
   loginIp: (request: Request) =>
     enforce(
       `login:ip:${clientIp(request)}`,
-      5,
-      FIFTEEN_MINUTES,
-      'Too many attempts from this address. Try again in 15 minutes.'
+      AUTH_MAX,
+      AUTH_WINDOW_MS,
+      `Too many attempts from this address. Try again in ${AUTH_WINDOW_TEXT}.`
     ),
 
   loginEmail: (request: Request, email: string) =>
     enforce(
       `login:email:${String(email ?? '').trim().toLowerCase() || clientIp(request)}`,
-      5,
-      FIFTEEN_MINUTES,
-      'Too many attempts for that email. Try again in 15 minutes.'
+      AUTH_MAX,
+      AUTH_WINDOW_MS,
+      `Too many attempts for that email. Try again in ${AUTH_WINDOW_TEXT}.`
     ),
 
+  /**
+   * Signup.
+   *
+   * This one carries the least weight of the three. The door closes by itself once
+   * an account exists, so the limiter is only guarding an endpoint that already
+   * answers 403 to everybody. It shares the auth setting anyway, so there is one
+   * number to reason about rather than two.
+   */
   signup: (request: Request) =>
     enforce(
       `signup:${clientIp(request)}`,
-      5,
-      FIFTEEN_MINUTES,
-      'Too many sign up attempts from this address. Try again in 15 minutes.'
+      AUTH_MAX,
+      AUTH_WINDOW_MS,
+      `Too many sign up attempts from this address. Try again in ${AUTH_WINDOW_TEXT}.`
     ),
 
   /** The GitHub sync is limited so the app can never hammer the GitHub API. */

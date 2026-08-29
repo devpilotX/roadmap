@@ -343,3 +343,53 @@ describe('the request body limit', () => {
     assert.match(validate, /export async function parseBody[^]*?maxBytes = MAX_BODY_BYTES/);
   });
 });
+
+/* ------------------------------------------------------- the auth rate limit */
+
+/**
+ * Section 5.3 sets login and signup at 5 attempts per 15 minutes, per address and
+ * per email. Those are the shipped defaults and this pins them.
+ *
+ * They are settable, because with TRUST_PROXY=0 there is no per-visitor address to
+ * key on and every caller shares one bucket, so five attempts at a form on one
+ * machine locks that machine out for a quarter of an hour. What must not happen is
+ * the default quietly drifting upwards, which is what these two tests prevent.
+ */
+describe('the login and signup rate limit', () => {
+  const config = readFileSync(new URL('../lib/config.ts', import.meta.url), 'utf8');
+  const limiter = readFileSync(new URL('../lib/server/rateLimit.ts', import.meta.url), 'utf8');
+
+  it('still defaults to 5 attempts in 15 minutes', () => {
+    assert.match(config, /AUTH_RATE_LIMIT_MAX', 5\)/, 'the default attempt count moved');
+    assert.match(
+      config,
+      /AUTH_RATE_LIMIT_WINDOW_MINUTES', 15\)/,
+      'the default window moved'
+    );
+  });
+
+  it('never allows a window or a count below one', () => {
+    assert.match(config, /Math\.max\(1, int\('AUTH_RATE_LIMIT_MAX'/);
+    assert.match(config, /Math\.max\(1, int\('AUTH_RATE_LIMIT_WINDOW_MINUTES'/);
+  });
+
+  it('still applies both login limiters, by address and by email', () => {
+    assert.match(limiter, /loginIp:/);
+    assert.match(limiter, /loginEmail:/);
+    assert.match(limiter, /login:ip:/);
+    assert.match(limiter, /login:email:/);
+  });
+
+  it('keeps the GitHub sync limit at six in five minutes, which is not configurable', () => {
+    // This one protects somebody else's API, not this application, so it is not
+    // the operator's to raise.
+    assert.match(limiter, /githubSync:[^]*?\n\s*6,\n\s*5 \* 60 \* 1000,/);
+  });
+
+  it('tells the person how long the window actually is', () => {
+    // A message that says 15 minutes while the setting says 1 is worse than no
+    // message, so the text is built from the setting.
+    assert.match(limiter, /AUTH_WINDOW_TEXT/);
+    assert.match(limiter, /Try again in \$\{AUTH_WINDOW_TEXT\}/);
+  });
+});

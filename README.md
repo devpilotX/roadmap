@@ -83,6 +83,35 @@ docker compose exec app npm run setup
 | `npm run digest` | The Saturday review as Markdown |
 | `npm run backup` | mysqldump, verified and pruned |
 
+Locked out and cannot reach `/profile` to fix it:
+
+```bash
+npx tsx scripts/reset-password.mjs --email=you@example.com --password='the new one'
+```
+
+It saves the old hash to `backups/` first, so `--restore=backups/pw-....json` puts it
+back. It applies the same password rules the API does, and it ends every session for
+that account, because a password change that leaves old sessions alive has not
+really changed anything.
+
+### The login rate limit
+
+Five attempts per fifteen minutes, per address and per email, from section 5.3. That
+is the default and it is what ships.
+
+With `TRUST_PROXY=0` there is no per-visitor address to key on, so every caller
+shares one bucket, and five attempts at a form on your own machine locks that
+machine out for a quarter of an hour with a message that reads exactly like a broken
+application. For local work, loosen it in `.env`:
+
+```
+AUTH_RATE_LIMIT_MAX=50
+AUTH_RATE_LIMIT_WINDOW_MINUTES=1
+```
+
+Raising these weakens brute force protection. **Leave them unset in production.**
+The counters live in process memory, so a restart clears them either way.
+
 Every script takes `--help`-style behaviour: run it with no arguments or with
 `--dry-run` first. None of them write anything in a dry run.
 

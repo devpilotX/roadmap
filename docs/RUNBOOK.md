@@ -463,6 +463,24 @@ instances behind nginx and the effective limit doubles. For one person's tracker
 that is irrelevant; if it ever stops being one person's tracker, move the counters
 into MySQL or Redis before adding the second instance.
 
+**And one thing to know while developing.** With `TRUST_PROXY=0` there is no
+per-visitor address to key on, so `clientIp` returns the literal `local` and every
+caller shares one bucket. Five attempts at the login form on your own machine
+therefore locks that machine out for fifteen minutes, and the message is
+indistinguishable from the application being broken. Two settings exist for this:
+
+```
+AUTH_RATE_LIMIT_MAX=50
+AUTH_RATE_LIMIT_WINDOW_MINUTES=1
+```
+
+Unset, they are 5 and 15, which is section 5.3. Raising them weakens brute force
+protection, so leave them unset in production. A restart clears the counters
+regardless, because they are in memory.
+
+If you are locked out and cannot wait, restart the process. If you are locked out of
+the account itself, `scripts/reset-password.mjs` is in section 3.
+
 ### 12.6 What is deliberately not exposed
 
 - There is no upload mount at all. The Express build mounted `public/uploads` as
