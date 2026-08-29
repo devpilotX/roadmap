@@ -9,8 +9,8 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { GATE3_DATE, computeEligibility } from '../src/lib/eligibility.mjs';
-import { ROLE_CODES_ALL, ROLE_CODES_EARLY, ROLE_CODES_MAIN } from '../src/lib/roleCodes.mjs';
+import { GATE3_DATE, computeEligibility } from '../lib/eligibility.ts';
+import { ROLE_CODES_ALL, ROLE_CODES_EARLY, ROLE_CODES_MAIN } from '../lib/roleCodes.ts';
 
 const eligibilityWeeks = [
   {

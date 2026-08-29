@@ -4,31 +4,41 @@
  * This is the test that answers "is anything reachable without signing in".
  * It runs against a server that is already listening, because that is the thing
  * worth testing, and skips itself entirely when nothing is up. Start one with
- * `npm start` and run the suite again to get real coverage here.
+ * `npm run build; npm start` and run the suite again to get real coverage here.
+ *
+ * It also refuses to run against something that is listening but is not this
+ * application, so a different project on the same port cannot produce a wall of
+ * false failures.
  */
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { config } from '../src/config.mjs';
+import { config } from '../lib/config.ts';
 
 const BASE = config.publicOrigin;
 
+/** True only when the thing on that port answers as this application. */
 async function reachable() {
   try {
-    const res = await fetch(`${BASE}/login`, { redirect: 'manual', signal: AbortSignal.timeout(2500) });
-    return res.status > 0;
+    const res = await fetch(`${BASE}/api/healthz`, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(2500),
+    });
+    const body = await res.json();
+    return typeof body?.data?.today === 'string' && 'db' in body.data;
   } catch {
     return false;
   }
 }
 
 const up = await reachable();
-const skip = () => (up ? false : `no server is listening on ${BASE}, so the HTTP surface cannot be checked`);
+const skip = () =>
+  up ? false : `the Roadmap Tracker is not listening on ${BASE}, so the HTTP surface cannot be checked`;
 
 const get = (path, init = {}) =>
   fetch(`${BASE}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(8000), ...init });
 
-/** Every page route registered in src/routes/pages/index.mjs. */
+/** Every page route in app/(app). */
 const PAGES = [
   '/', '/calendar', '/weeks', '/weeks/1', '/dsa', '/library', '/projects', '/gates',
   '/sundays', '/pushes', '/money', '/applications', '/ladder', '/roles', '/eligibility',
@@ -36,19 +46,34 @@ const PAGES = [
   '/print/week',
 ];
 
-/** A sample of API routes, one per domain file. */
+/** A sample of API routes, one per area of the surface. */
 const API = [
-  '/api/health', '/api/today', '/api/weeks', '/api/dsa', '/api/money/leads',
-  '/api/applications', '/api/ladder', '/api/roles', '/api/eligibility', '/api/stats',
-  '/api/warnings', '/api/everything', '/api/export/all.json', '/api/export/day_logs.csv',
+  '/api/me',
+  '/api/today',
+  '/api/warnings',
+  '/api/calendar',
+  '/api/weeks',
+  '/api/dsa/summary',
+  '/api/money/summary',
+  '/api/leads',
+  '/api/applications',
+  '/api/ladder',
+  '/api/roles',
+  '/api/eligibility',
+  '/api/stats',
+  '/api/everything',
+  '/api/ops',
+  '/api/export/all.json',
+  '/api/export/day_logs',
 ];
 
 describe('nothing private is reachable without a session', () => {
   for (const path of PAGES) {
     it(`${path} redirects to the login page`, { skip: skip() }, async () => {
       const res = await get(path);
-      assert.equal(res.status, 302, `${path} answered ${res.status}`);
-      assert.match(res.headers.get('location') ?? '', /^\/login/);
+      // Next answers a server side redirect with 307, which preserves the method.
+      assert.ok([302, 307].includes(res.status), `${path} answered ${res.status}`);
+      assert.match(res.headers.get('location') ?? '', /\/login/);
     });
   }
 
@@ -78,20 +103,32 @@ describe('the pages a stranger is allowed to see', () => {
   });
 
   it('serves the signup page', { skip: skip() }, async () => {
+    // Open or closed, it must answer rather than redirect: the closed state is a
+    // page that explains itself.
     assert.equal((await get('/signup')).status, 200);
+  });
+
+  it('answers the health check without a session', { skip: skip() }, async () => {
+    const res = await get('/api/healthz');
+    assert.ok([200, 503].includes(res.status));
   });
 
   it('answers 404 for a route that does not exist', { skip: skip() }, async () => {
     assert.equal((await get('/definitely-not-a-route')).status, 404);
   });
+
+  it('tells crawlers to stay out', { skip: skip() }, async () => {
+    const body = await (await get('/robots.txt')).text();
+    assert.match(body, /Disallow: \//);
+  });
 });
 
 describe('static assets are served from the same origin', () => {
   for (const [path, type] of [
-    ['/css/tokens.css', /text\/css/],
-    ['/css/base.css', /text\/css/],
-    ['/js/boot.mjs', /javascript/],
-    ['/js/sw.js', /javascript/],
+    ['/sw.js', /javascript/],
+    ['/manifest.webmanifest', /manifest|json/],
+    ['/img/icon.svg', /svg/],
+    ['/img/icon-192.png', /png/],
   ]) {
     it(`${path} is served as ${type}`, { skip: skip() }, async () => {
       const res = await get(path);
@@ -101,15 +138,20 @@ describe('static assets are served from the same origin', () => {
   }
 });
 
-describe('the security headers helmet sets', () => {
-  it('sends a content security policy with no unsafe-inline script source', { skip: skip() }, async () => {
+describe('the security headers', () => {
+  it('sends a content security policy with a nonce and no unsafe-inline script', { skip: skip() }, async () => {
     const csp = (await get('/login')).headers.get('content-security-policy') ?? '';
     assert.ok(csp.length > 0, 'there is no CSP at all');
     assert.match(csp, /default-src 'self'/);
     assert.match(csp, /object-src 'none'/);
     assert.match(csp, /frame-ancestors 'none'/);
-    assert.equal(/script-src[^;]*unsafe-inline/.test(csp), false, 'the CSP allows inline script');
-    assert.equal(/script-src[^;]*unsafe-eval/.test(csp), false, 'the CSP allows eval');
+    assert.match(csp, /script-src[^;]*'nonce-/, 'the script policy carries no nonce');
+    assert.equal(
+      /script-src[^;]*unsafe-inline/.test(csp),
+      false,
+      'the CSP allows inline script'
+    );
+    assert.match(csp, /style-src-attr 'none'/, 'a style attribute would be allowed');
   });
 
   it('refuses to be framed and refuses content sniffing', { skip: skip() }, async () => {
@@ -127,10 +169,15 @@ describe('the security headers helmet sets', () => {
   });
 
   it('sets a session cookie that is HttpOnly, SameSite and path scoped', { skip: skip() }, async () => {
-    const cookie = (await get('/login')).headers.get('set-cookie') ?? '';
-    assert.match(cookie, /HttpOnly/i);
-    assert.match(cookie, /SameSite=(Lax|Strict)/i);
-    assert.match(cookie, /Path=\//);
+    // The session row is created when the CSRF token is issued, which is the
+    // first thing the browser asks for before it can post anything.
+    const res = await get('/api/csrf');
+    const cookies = (res.headers.getSetCookie?.() ?? []).join('\n');
+    const session = cookies.split('\n').find((c) => c.startsWith('roadmap.sid=')) ?? '';
+    assert.ok(session, 'no session cookie was set');
+    assert.match(session, /HttpOnly/i);
+    assert.match(session, /SameSite=(Lax|Strict)/i);
+    assert.match(session, /Path=\//);
   });
 
   it('never advertises the framework', { skip: skip() }, async () => {
@@ -147,7 +194,10 @@ describe('CSRF protection', () => {
     });
 
   it('rejects a login POST that carries no token', { skip: skip() }, async () => {
-    const res = await post('/api/auth/login', { email: 'a@example.com', password: 'whatever-12345' });
+    const res = await post('/api/auth/login', {
+      email: 'a@example.com',
+      password: 'whatever-12345',
+    });
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error.code, 'FORBIDDEN');
@@ -158,8 +208,8 @@ describe('CSRF protection', () => {
   });
 
   it('rejects a write to a data route that carries no token', { skip: skip() }, async () => {
-    const res = await post('/api/daily/log', { log_date: '2026-08-28' });
-    assert.ok([401, 403, 404].includes(res.status), `answered ${res.status}`);
+    const res = await post('/api/me/synced', {});
+    assert.ok([401, 403].includes(res.status), `answered ${res.status}`);
   });
 
   it('does not reject a plain GET', { skip: skip() }, async () => {

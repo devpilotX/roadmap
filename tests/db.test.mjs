@@ -11,13 +11,13 @@
 
 import { strict as assert } from 'node:assert';
 import { after, describe, it } from 'node:test';
-import { config } from '../src/config.mjs';
+import { config } from '../lib/config.ts';
 import { databaseIsUp } from './helpers.mjs';
 
 // The check runs at module load, before any describe body executes, because the
 // skip decision has to be known by the time the tests are registered.
 const up = await databaseIsUp().catch(() => false);
-const pool = up ? await import('../src/db/pool.mjs') : null;
+const pool = up ? await import('../lib/db/pool.ts') : null;
 const query = pool?.query;
 const scalar = pool?.scalar;
 

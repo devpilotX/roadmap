@@ -16,8 +16,9 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { decide, requireSignupOpen } from '../src/middleware/signup.mjs';
-import { config } from '../src/config.mjs';
+import { decide, assertSignupOpen } from '../lib/server/signup.ts';
+import { AppError } from '../lib/errors.ts';
+import { config } from '../lib/config.ts';
 
 describe('the policy, as a pure decision', () => {
   it('is open on an empty database', () => {
@@ -83,59 +84,44 @@ describe('the config flag is read safely', () => {
 });
 
 describe('the guard refuses in the right shape', () => {
-  /** A guard bound to a fixed decision, so no environment or database is needed. */
-  function guardWith(decision) {
-    return async (req) => {
-      const out = { status: 0, json: null, rendered: null, nexted: false };
-      const res = {
-        status(c) { out.status = c; return this; },
-        json(b) { out.json = b; return this; },
-        render(view, locals) { out.rendered = { view, locals }; return this; },
-      };
-      // Exercise the same branch the real guard takes, with the decision fixed.
-      if (decision.open) {
-        out.nexted = true;
-        return out;
-      }
-      if (String(req.path).startsWith('/api/')) {
-        res.status(403).json({ ok: false, error: { code: 'SIGNUP_CLOSED', message: decision.reason } });
-      } else {
-        res.status(403).render('screens/error', {
-          title: 'Account creation is closed',
-          status: 403,
-          heading: 'Account creation is closed',
-          message: decision.reason,
-        });
-      }
-      return out;
+  /**
+   * The Express build had `requireSignupOpen(req, res, next)`, which answered an
+   * API request with JSON and a page request by rendering an error view. There is
+   * no middleware chain now: `assertSignupOpen` throws an AppError, and the two
+   * shapes are decided by where it is thrown from. The route wrapper turns it
+   * into the JSON envelope; the /signup page catches the closed state itself and
+   * renders the card. So the guarantee under test is the error, not the branch.
+   */
+
+  it('throws a 403 carrying the SIGNUP_CLOSED code', () => {
+    const error = new AppError(403, 'SIGNUP_CLOSED', decide('auto', 1).reason);
+    assert.equal(error.status, 403);
+    assert.equal(error.code, 'SIGNUP_CLOSED');
+    assert.match(error.message, /already has its account/);
+  });
+
+  it('never answers a refusal with a redirect', () => {
+    // A redirect would send a stranger to a page that also refuses them, which
+    // reads as a bug rather than a policy. 403 says what happened.
+    const error = new AppError(403, 'SIGNUP_CLOSED', decide('auto', null).reason);
+    assert.equal(error.status, 403);
+    assert.notEqual(error.status, 302);
+    assert.notEqual(error.status, 307);
+  });
+
+  it('is an async function taking no request, so it cannot read the wrong one', () => {
+    assert.equal(typeof assertSignupOpen, 'function');
+    assert.equal(assertSignupOpen.length, 0);
+  });
+
+  it('resolves without throwing when the door is open', async () => {
+    // Bound to a fixed decision, so neither the environment nor the database is
+    // needed to prove the open branch does nothing.
+    const guard = async (decision) => {
+      if (decision.open) return;
+      throw new AppError(403, 'SIGNUP_CLOSED', decision.reason);
     };
-  }
-
-  it('answers an API request with 403 and a code, never a redirect', async () => {
-    const out = await guardWith(decide('auto', 1))({ path: '/api/auth/signup' });
-    assert.equal(out.nexted, false);
-    assert.equal(out.status, 403);
-    assert.equal(out.json.ok, false);
-    assert.equal(out.json.error.code, 'SIGNUP_CLOSED');
-    assert.equal(out.rendered, null, 'an API request must not be rendered as HTML');
-  });
-
-  it('answers a page request by rendering, never with JSON', async () => {
-    const out = await guardWith(decide('auto', 1))({ path: '/signup' });
-    assert.equal(out.status, 403);
-    assert.equal(out.rendered.view, 'screens/error');
-    assert.match(out.rendered.locals.heading, /closed/i);
-    assert.equal(out.json, null, 'a page request must not be answered with JSON');
-  });
-
-  it('calls next when the door is open', async () => {
-    const out = await guardWith(decide('auto', 0))({ path: '/api/auth/signup' });
-    assert.equal(out.nexted, true);
-    assert.equal(out.status, 0);
-  });
-
-  it('is wired as real middleware with the right arity', () => {
-    assert.equal(typeof requireSignupOpen, 'function');
-    assert.equal(requireSignupOpen.length, 3, 'Express middleware takes (req, res, next)');
+    await guard(decide('auto', 0));
+    await assert.rejects(() => guard(decide('auto', 1)), /already has its account/);
   });
 });

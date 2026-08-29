@@ -7,7 +7,7 @@
  * started and still meaningful on a machine with everything up.
  */
 
-import { config } from '../src/config.mjs';
+import { config } from '../lib/config.ts';
 
 export const FIRST_DAY = '2026-08-28';
 export const LAST_DAY = '2027-01-24';
@@ -71,7 +71,7 @@ export function quietContext(overrides = {}) {
 /** True when a MySQL server answers on the configured host and port. */
 export async function databaseIsUp() {
   try {
-    const { ping, closePool } = await import('../src/db/pool.mjs');
+    const { ping, closePool } = await import('../lib/db/pool.ts');
     const ok = await ping();
     if (!ok) await closePool();
     return ok;

@@ -7,7 +7,7 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { WARNING_CODES, evaluateWarnings, notifiableGateCountdowns } from '../src/lib/warnings.mjs';
+import { WARNING_CODES, evaluateWarnings, notifiableGateCountdowns } from '../lib/warnings.ts';
 import { quietContext } from './helpers.mjs';
 
 const codes = (ctx) => evaluateWarnings(ctx).map((w) => w.code);

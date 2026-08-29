@@ -30,10 +30,10 @@ import { execFile } from 'node:child_process';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { config, ROOT } from '../src/config.mjs';
-import { closePool, query, run } from '../src/db/pool.mjs';
-import { EXPORTABLE, REFERENCE_TABLES, USER_TABLES, toCsv } from '../src/lib/exportTables.mjs';
-import { todayInTz } from '../src/lib/dates.mjs';
+import { config, ROOT } from '../lib/config.ts';
+import { closePool, query, run } from '../lib/db/pool.ts';
+import { EXPORTABLE, REFERENCE_TABLES, USER_TABLES, toCsv } from '../lib/exportTables.ts';
+import { todayInTz } from '../lib/dates.ts';
 import {
   banner, bad, good, info, intOption, parseArgv, runScript, say, sqlNow, step, table, warn,
 } from './lib/cli.mjs';

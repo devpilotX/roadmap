@@ -60,8 +60,8 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { closePool, one, query, run as dbRun, transaction } from '../src/db/pool.mjs';
-import { todayInTz } from '../src/lib/dates.mjs';
+import { closePool, one, query, run as dbRun, transaction } from '../lib/db/pool.ts';
+import { todayInTz } from '../lib/dates.ts';
 import {
   banner, bad, csvToObjects, good, info, parseArgv, runScript, say, sqlNow, step, table, warn,
 } from './lib/cli.mjs';

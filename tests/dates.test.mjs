@@ -32,8 +32,8 @@ import {
   weekdayIndex,
   weekdayName,
   weekForDate,
-} from '../src/lib/dates.mjs';
-import { config } from '../src/config.mjs';
+} from '../lib/dates.ts';
+import { config } from '../lib/config.ts';
 import { FIRST_DAY, GATE3, LAST_DAY } from './helpers.mjs';
 
 describe('the roadmap window', () => {

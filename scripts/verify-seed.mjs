@@ -17,8 +17,8 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ROOT } from '../src/config.mjs';
-import { closePool, query, scalar } from '../src/db/pool.mjs';
+import { ROOT } from '../lib/config.ts';
+import { closePool, query, scalar } from '../lib/db/pool.ts';
 import { MdDoc } from './lib/md.mjs';
 import { seedContract } from './lib/extract/appendix.mjs';
 

@@ -1,6 +1,14 @@
 # Dependencies
 node_modules/
 
+# Next.js build output and the files it generates. next-env.d.ts is regenerated
+# on every build, and tsconfig.tsbuildinfo is a local cache.
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+.vercel/
+
 # Secrets. .env.example is committed and carries no real values.
 .env
 .env.local

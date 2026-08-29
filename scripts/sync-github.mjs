@@ -35,10 +35,10 @@
  *      not as a bug, which is why it is its own code.
  */
 
-import { config } from '../src/config.mjs';
-import { closePool, one, query } from '../src/db/pool.mjs';
-import { todayInTz } from '../src/lib/dates.mjs';
-import { pushSummary, syncUser } from '../src/lib/github.mjs';
+import { config } from '../lib/config.ts';
+import { closePool, one, query } from '../lib/db/pool.ts';
+import { todayInTz } from '../lib/dates.ts';
+import { pushSummary, syncUser } from '../lib/github.ts';
 import {
   banner, bad, good, info, parseArgv, runScript, say, step, table, warn,
 } from './lib/cli.mjs';

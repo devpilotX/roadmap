@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import {
   csvToObjects, intOption, parseArgv, parseCsv, sqlNow, toCsv,
 } from '../scripts/lib/cli.mjs';
-import { EXPORTABLE, REFERENCE_TABLES, USER_TABLES, toCsv as exportCsv } from '../src/lib/exportTables.mjs';
+import { EXPORTABLE, REFERENCE_TABLES, USER_TABLES, toCsv as exportCsv } from '../lib/exportTables.ts';
 
 describe('parseCsv', () => {
   it('reads a plain file', () => {

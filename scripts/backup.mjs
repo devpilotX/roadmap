@@ -28,8 +28,8 @@ import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { config, ROOT } from '../src/config.mjs';
-import { closePool, ping, run } from '../src/db/pool.mjs';
+import { config, ROOT } from '../lib/config.ts';
+import { closePool, ping, run } from '../lib/db/pool.ts';
 import {
   banner, bad, good, info, intOption, parseArgv, runScript, say, sqlNow, step, warn,
 } from './lib/cli.mjs';

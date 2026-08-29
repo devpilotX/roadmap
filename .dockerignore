@@ -6,6 +6,14 @@
 node_modules
 npm-debug.log*
 
+# The build output is produced inside the image, never copied into it. A .next
+# directory built on Windows would carry the wrong native bindings and the wrong
+# absolute paths.
+.next/
+out/
+tsconfig.tsbuildinfo
+next-env.d.ts
+
 # Secrets. .env.example is committed, .env never is, and it must never be baked
 # into a layer.
 .env

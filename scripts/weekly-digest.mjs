@@ -23,11 +23,11 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { config, ROOT } from '../src/config.mjs';
-import { closePool, one, query } from '../src/db/pool.mjs';
-import { longDate, shortDate, todayInTz } from '../src/lib/dates.mjs';
-import { rupeeEvents, sumBetween, totalReceived } from '../src/lib/money.mjs';
-import { warningsFor } from '../src/db/warnings.mjs';
+import { config, ROOT } from '../lib/config.ts';
+import { closePool, one, query } from '../lib/db/pool.ts';
+import { longDate, shortDate, todayInTz } from '../lib/dates.ts';
+import { rupeeEvents, sumBetween, totalReceived } from '../lib/money.ts';
+import { warningsFor } from '../lib/db/warnings.ts';
 import { banner, good, info, intOption, parseArgv, runScript, say, step, warn } from './lib/cli.mjs';
 
 const { flags, values } = parseArgv(process.argv.slice(2), ['week', 'user', 'out']);

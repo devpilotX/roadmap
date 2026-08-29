@@ -1,0 +1,407 @@
+@import 'tailwindcss';
+@import './design.css';
+@import './screens.css';
+
+/* ==================================================================
+   globals.css | every colour, size and duration in the application
+   ==================================================================
+   Rules that govern this file:
+     - Blue is the only default accent.
+     - Green, orange and red carry fixed meaning: done, attention, missed.
+       They are never decorative, and never the only signal.
+     - Nothing outside this file may contain a raw colour value.
+
+   The semantic variables are declared in :root so the theme can be switched
+   at runtime by setting data-theme on <html>. `@theme inline` then maps them
+   into Tailwind's token space, so `bg-canvas` and `text-muted` resolve through
+   the variable rather than being frozen at build time.
+   ================================================================== */
+
+:root {
+  /* ---- ink and surfaces, light ---- */
+  --ink: #2c2c2b;
+  --muted: #7d7a75;
+  --canvas: #ffffff;
+  --soft: #f9f8f7;
+  --surface: #f0efed;
+  --border: #e6e5e3;
+
+  /* ---- meaning ---- */
+  --blue: #2783de;
+  --blue-soft: #e5f2fc;
+  --green: #46a171;
+  --green-soft: #e8f1ec;
+  --orange: #d5803b;
+  --orange-soft: #fbebde;
+  --red: #e56458;
+  --red-soft: #fce9e7;
+
+  /* ---- shape ---- */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --gap: 16px;
+
+  /* ---- type ---- */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 21px;
+  --text-xl: 26px;
+  --text-2xl: 32px;
+  --text-3xl: 44px;
+  --text-4xl: 56px;
+
+  --leading: 1.55;
+  --leading-tight: 1.2;
+  --measure: 70ch;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- 8px spacing scale ---- */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+
+  /* ---- layout ---- */
+  --sidebar-w: 240px;
+  --bottombar-h: 60px;
+  --tap: 44px;
+  --content-max: 1180px;
+
+  /* ---- motion, 120 ms and nothing longer ---- */
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --dur: 120ms;
+
+  /* ---- depth, used sparingly ---- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.14);
+
+  /* ---- phase colours, A to F, in that order ---- */
+  --phase-a: #5e9fe8;
+  --phase-b: #eac26b;
+  --phase-c: #72bc8f;
+  --phase-d: #bf8eda;
+  --phase-e: #de9255;
+  --phase-f: #df84a8;
+
+  --focus-ring: 0 0 0 2px var(--canvas), 0 0 0 4px var(--blue);
+  --scrim: rgba(24, 24, 24, 0.38);
+}
+
+/* ---- dark, by system preference unless the user chose light ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ink: #ffffff;
+    --muted: rgba(255, 255, 255, 0.65);
+    --canvas: #191919;
+    --soft: #202020;
+    --surface: #383836;
+    --border: rgba(255, 255, 255, 0.2);
+
+    --blue: #5e9fe8;
+    --blue-soft: rgba(94, 159, 232, 0.16);
+    --green: #72bc8f;
+    --green-soft: rgba(114, 188, 143, 0.16);
+    --orange: #de9255;
+    --orange-soft: rgba(222, 146, 85, 0.16);
+    --red: #e97366;
+    --red-soft: rgba(233, 115, 102, 0.16);
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.55);
+    --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.7);
+    --scrim: rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ---- dark, chosen explicitly ---- */
+:root[data-theme='dark'] {
+  --ink: #ffffff;
+  --muted: rgba(255, 255, 255, 0.65);
+  --canvas: #191919;
+  --soft: #202020;
+  --surface: #383836;
+  --border: rgba(255, 255, 255, 0.2);
+
+  --blue: #5e9fe8;
+  --blue-soft: rgba(94, 159, 232, 0.16);
+  --green: #72bc8f;
+  --green-soft: rgba(114, 188, 143, 0.16);
+  --orange: #de9255;
+  --orange-soft: rgba(222, 146, 85, 0.16);
+  --red: #e97366;
+  --red-soft: rgba(233, 115, 102, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(0, 0, 0, 0.6);
+}
+
+/* Motion is a preference, not a decoration. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 1ms;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Tailwind token space. `inline` keeps the reference to the variable,
+   which is what makes runtime theme switching work.
+   ------------------------------------------------------------------ */
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-canvas: var(--canvas);
+  --color-soft: var(--soft);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-orange: var(--orange);
+  --color-orange-soft: var(--orange-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+
+  --color-phase-a: var(--phase-a);
+  --color-phase-b: var(--phase-b);
+  --color-phase-c: var(--phase-c);
+  --color-phase-d: var(--phase-d);
+  --color-phase-e: var(--phase-e);
+  --color-phase-f: var(--phase-f);
+
+  --font-sans: var(--font);
+  --font-mono: var(--mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+}
+
+/* ==================================================================
+   base | reset and typography
+   ================================================================== */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font);
+    font-size: var(--text-base);
+    line-height: var(--leading);
+    color: var(--ink);
+    background: var(--soft);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0;
+    line-height: var(--leading-tight);
+    font-weight: var(--weight-semibold);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+  }
+  h2 {
+    font-size: var(--text-lg);
+  }
+  h3 {
+    font-size: var(--text-md);
+  }
+  h4 {
+    font-size: var(--text-base);
+  }
+
+  p {
+    margin: 0 0 var(--s3);
+    max-width: var(--measure);
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  ul,
+  ol {
+    margin: 0 0 var(--s3);
+    padding-left: var(--s5);
+  }
+
+  li {
+    margin-bottom: var(--s1);
+    max-width: var(--measure);
+  }
+
+  a {
+    color: var(--blue);
+    text-decoration: none;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  strong,
+  b {
+    font-weight: var(--weight-semibold);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--mono);
+    font-size: 0.92em;
+  }
+
+  code {
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+  }
+
+  pre {
+    background: var(--surface);
+    padding: var(--s3);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 0 0 var(--s3);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+  }
+
+  kbd {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+    font-size: var(--text-xs);
+    color: var(--muted);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--s5) 0;
+  }
+
+  blockquote {
+    margin: 0 0 var(--s3);
+    padding: var(--s3) var(--s4);
+    border-left: 3px solid var(--border);
+    background: var(--soft);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    color: var(--ink);
+  }
+
+  img,
+  svg,
+  video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background: var(--blue-soft);
+    color: var(--ink);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: var(--radius-pill);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}

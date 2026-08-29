@@ -15,8 +15,8 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ROOT, config } from '../src/config.mjs';
-import { closePool, getPool, query, run } from '../src/db/pool.mjs';
+import { ROOT, config } from '../lib/config.ts';
+import { closePool, getPool, query, run } from '../lib/db/pool.ts';
 import { splitSql } from './lib/sqlsplit.mjs';
 
 const MIGRATIONS = join(ROOT, 'migrations');

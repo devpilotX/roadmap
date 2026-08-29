@@ -8,8 +8,8 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { sumBetween, sumByMonth, totalReceived, touchTargetFromTask } from '../src/lib/money.mjs';
-import { config } from '../src/config.mjs';
+import { sumBetween, sumByMonth, totalReceived, touchTargetFromTask } from '../lib/money.ts';
+import { config } from '../lib/config.ts';
 
 const events = [
   { on: '2026-08-29', amount: 3000, kind: 'advance', label: 'Acme advance, S1' },

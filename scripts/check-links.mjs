@@ -29,8 +29,8 @@
  *   10 3 * * *  cd /srv/roadmap-tracker && /usr/bin/node scripts/check-links.mjs >> /var/log/roadmap/links.log 2>&1
  */
 
-import { closePool, query, run } from '../src/db/pool.mjs';
-import { todayInTz } from '../src/lib/dates.mjs';
+import { closePool, query, run } from '../lib/db/pool.ts';
+import { todayInTz } from '../lib/dates.ts';
 import {
   banner, bad, good, info, intOption, parseArgv, runScript, say, sleep, sqlNow, step, table, tick, warn,
 } from './lib/cli.mjs';

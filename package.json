@@ -1,36 +1,61 @@
 {
   "name": "roadmap-tracker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "The Roadmap Tracker. A personal career tracker seeded from final.md, for the window 28 August 2026 to 24 January 2027.",
+  "description": "The Roadmap Tracker. A personal career tracker seeded from final.md, for the window 28 August 2026 to 24 January 2027. Next.js App Router, TypeScript, Tailwind, MySQL.",
   "type": "module",
   "engines": {
-    "node": ">=24.0.0 <25"
+    "node": ">=20.9.0"
   },
   "scripts": {
-    "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "parse": "node scripts/seed-from-md.mjs",
-    "migrate": "node scripts/migrate.mjs",
-    "verify": "node scripts/verify-seed.mjs",
-    "setup": "node scripts/seed-from-md.mjs && node scripts/migrate.mjs && node scripts/verify-seed.mjs",
-    "test": "node --test --test-reporter=spec tests/**/*.test.mjs",
-    "check-links": "node scripts/check-links.mjs",
-    "sync-github": "node scripts/sync-github.mjs",
-    "import-dsa": "node scripts/import-dsa.mjs",
-    "export-all": "node scripts/export-all.mjs",
-    "digest": "node scripts/weekly-digest.mjs",
-    "backup": "node scripts/backup.mjs"
+    "migrate": "tsx scripts/migrate.mjs",
+    "verify": "tsx scripts/verify-seed.mjs",
+    "setup": "node scripts/seed-from-md.mjs && tsx scripts/migrate.mjs && tsx scripts/verify-seed.mjs",
+    "test": "tsx --test --test-reporter=spec \"tests/*.test.mjs\"",
+    "smoke": "tsx scripts/smoke.mjs",
+    "check-links": "tsx scripts/check-links.mjs",
+    "sync-github": "tsx scripts/sync-github.mjs",
+    "import-dsa": "tsx scripts/import-dsa.mjs",
+    "export-all": "tsx scripts/export-all.mjs",
+    "digest": "tsx scripts/weekly-digest.mjs",
+    "backup": "tsx scripts/backup.mjs"
   },
   "dependencies": {
     "argon2": "0.44.0",
-    "ejs": "3.1.10",
-    "express": "5.1.0",
-    "express-mysql-session": "3.0.3",
-    "express-rate-limit": "8.6.2",
-    "express-session": "1.18.2",
-    "helmet": "8.1.0",
     "mysql2": "3.15.3",
+    "next": "^15.5.24",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "server-only": "0.0.1",
     "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "4.1.13",
+    "@types/node": "24.5.2",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "eslint": "9.36.0",
+    "eslint-config-next": "^15.5.24",
+    "tailwindcss": "4.1.13",
+    "tsx": "^4.20.6",
+    "typescript": "5.9.2"
+  },
+  "overrides": {
+    "sharp": "0.35.4",
+    "postcss": "8.5.26"
+  },
+  "allowScripts": {
+    "argon2@0.44.0": true,
+    "@tailwindcss/oxide@4.1.13": true,
+    "sharp@0.35.4": true,
+    "unrs-resolver@1.12.2": true,
+    "esbuild@0.25.12": true
   }
 }

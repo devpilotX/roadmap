@@ -80,7 +80,9 @@ services:
       # rebuild, and the container can never write to it.
       - ./data/final.md:/app/data/final.md:ro
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Asks the application whether it can reach MySQL, which is the question
+      # that matters. It answers 503 when it cannot.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -113,6 +115,9 @@ services:
     # A plain loop, so there is no cron daemon to configure and the schedule is
     # visible here. Each script logs to stdout, which is where the container log
     # already is. Times are Asia/Kolkata because TZ is set above.
+    #
+    # The scripts import the TypeScript modules under lib/, so they run through
+    # tsx rather than node directly. That is the same command npm run uses.
     command:
       - sh
       - -c
@@ -122,17 +127,17 @@ services:
           now=$$(date +%H%M)
           case "$$now" in
             0230) ./scripts/backup.sh || echo "backup failed" ;;
-            0310) node scripts/check-links.mjs || echo "link check failed" ;;
-            0340) node scripts/export-all.mjs || echo "export failed" ;;
+            0310) npx tsx scripts/check-links.mjs || echo "link check failed" ;;
+            0340) npx tsx scripts/export-all.mjs || echo "export failed" ;;
           esac
           # Every 30 minutes, on the hour and the half hour.
           case "$$now" in
-            *00|*30) node scripts/sync-github.mjs; code=$$?;
+            *00|*30) npx tsx scripts/sync-github.mjs; code=$$?;
                      [ "$$code" = "2" ] && echo "github rate limited, will retry" ;;
           esac
           # Saturday at 18:30, after the money hour.
           if [ "$$(date +%u)" = "6" ] && [ "$$now" = "1830" ]; then
-            node scripts/weekly-digest.mjs --out=backups/digest-latest.md || echo "digest failed"
+            npx tsx scripts/weekly-digest.mjs --out=backups/digest-latest.md || echo "digest failed"
           fi
           sleep 60
         done

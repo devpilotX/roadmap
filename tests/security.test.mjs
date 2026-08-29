@@ -7,6 +7,7 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
   ARGON2_OPTIONS,
@@ -14,9 +15,10 @@ import {
   blocklistSize,
   checkPassword,
   strengthScore,
-} from '../src/lib/passwords.mjs';
-import { renderMarkdown } from '../src/lib/markdown.mjs';
-import { buildIcs } from '../src/lib/ics.mjs';
+} from '../lib/passwords.ts';
+import { renderMarkdown } from '../lib/markdown.ts';
+import { buildIcs } from '../lib/ics.ts';
+import { safeNextPath } from '../lib/paths.ts';
 
 describe('argon2 parameters', () => {
   it('matches the OWASP figures correction C15 names', () => {
@@ -198,5 +200,146 @@ describe('the calendar file', () => {
     const empty = buildIcs({ days: [], origin: 'http://127.0.0.1:3000' });
     assert.match(empty, /BEGIN:VCALENDAR/);
     assert.match(empty, /END:VCALENDAR/);
+  });
+});
+
+
+/* ------------------------------------------------- the two cookies agree */
+
+/**
+ * These are source text checks, not imports.
+ *
+ * lib/server/session.ts and lib/server/csrf.ts both reach for next/headers, which
+ * cannot be loaded outside a request. The invariants below are still worth pinning,
+ * because each one has already been the cause of a real fault:
+ *
+ *   - the CSRF cookie name is written out in both files rather than imported, to
+ *     avoid a cycle. If the two ever drift, signing out stops clearing the token.
+ *   - signing out has to clear BOTH cookies. Leaving the CSRF cookie behind left a
+ *     token in the browser with no session row to match it against, and every
+ *     subsequent sign in was refused until the cookie expired 30 days later.
+ *   - the session JSON has to keep the key `userId`, because changing the password
+ *     ends other sessions with `data LIKE '%"userId":N%'`.
+ */
+describe('the session and CSRF cookies', () => {
+  const session = readFileSync(new URL('../lib/server/session.ts', import.meta.url), 'utf8');
+  const csrf = readFileSync(new URL('../lib/server/csrf.ts', import.meta.url), 'utf8');
+  const password = readFileSync(
+    new URL('../app/api/me/password/route.ts', import.meta.url),
+    'utf8'
+  );
+
+  const nameIn = (src, constant) =>
+    new RegExp(`${constant}\\s*=\\s*'([^']+)'`).exec(src)?.[1] ?? null;
+
+  it('use the same CSRF cookie name in both files', () => {
+    const a = nameIn(session, 'CSRF_COOKIE');
+    const b = nameIn(csrf, 'CSRF_COOKIE');
+    assert.ok(a, 'session.ts does not declare CSRF_COOKIE');
+    assert.equal(a, b, 'the two CSRF cookie names have drifted');
+  });
+
+  it('clear both cookies when the session is destroyed', () => {
+    const body = /export async function destroySession\([^]*?\n}/.exec(session)?.[0] ?? '';
+    assert.match(body, /SESSION_COOKIE/, 'destroySession does not clear the session cookie');
+    assert.match(body, /CSRF_COOKIE/, 'destroySession does not clear the CSRF cookie');
+  });
+
+  it('keep the session key the password change query matches on', () => {
+    // The writer and the reader of that substring have to agree exactly.
+    assert.match(session, /userId\?: number/, 'the session no longer stores userId');
+    assert.match(password, /"userId":\$\{user\.id\}/, 'the DELETE no longer matches on userId');
+  });
+
+  it('set the session cookie httpOnly, lax, path scoped and 30 days', () => {
+    assert.match(session, /httpOnly: true/);
+    assert.match(session, /sameSite: 'lax'/);
+    assert.match(session, /secure: config\.isProd/);
+    assert.match(session, /path: '\/'/);
+    assert.match(session, /SESSION_TTL_SECONDS = 30 \* 24 \* 60 \* 60/);
+  });
+
+  it('leave the CSRF cookie readable, because the script has to echo it', () => {
+    assert.match(csrf, /httpOnly: false/);
+  });
+});
+
+/* ------------------------------------------------------ the redirect guard */
+
+/**
+ * `?next=` returns you to where you were going after signing in. It is also the
+ * classic open redirect, so the shape of an acceptable value is pinned here.
+ *
+ * `startsWith('/')` alone is not enough: `//evil.example` starts with a slash and a
+ * browser resolves it to another origin.
+ */
+describe('safeNextPath', () => {
+  it('accepts a same origin path', () => {
+    assert.equal(safeNextPath('/calendar'), '/calendar');
+    assert.equal(safeNextPath('/weeks/7'), '/weeks/7');
+    assert.equal(safeNextPath('/calendar?date=2026-10-04'), '/calendar?date=2026-10-04');
+    assert.equal(safeNextPath('/print/week?week=3#sheet'), '/print/week?week=3#sheet');
+  });
+
+  it('refuses a scheme-relative URL, which is the open redirect', () => {
+    for (const bad of ['//evil.example', '//evil.example/path', '///evil.example']) {
+      assert.equal(safeNextPath(bad), '/', `${bad} was accepted`);
+    }
+  });
+
+  it('refuses the backslash variant, which some browsers normalise', () => {
+    assert.equal(safeNextPath('/\\evil.example'), '/');
+    assert.equal(safeNextPath('\\\\evil.example'), '/');
+  });
+
+  it('refuses an absolute URL', () => {
+    for (const bad of [
+      'https://evil.example',
+      'http://evil.example',
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+    ]) {
+      assert.equal(safeNextPath(bad), '/', `${bad} was accepted`);
+    }
+  });
+
+  it('refuses anything that is not a string, and anything empty', () => {
+    for (const bad of [undefined, null, 0, 1, {}, [], true, '', '   ', '/']) {
+      assert.equal(safeNextPath(bad), '/');
+    }
+  });
+
+  it('refuses whitespace and control characters inside the path', () => {
+    assert.equal(safeNextPath('/ok\nSet-Cookie: x=1'), '/');
+    assert.equal(safeNextPath('/ok\u0000'), '/');
+    assert.equal(safeNextPath('/two words'), '/');
+  });
+
+  it('honours a caller supplied fallback', () => {
+    assert.equal(safeNextPath('https://evil.example', '/profile'), '/profile');
+  });
+});
+
+/* ---------------------------------------------------------- the body limit */
+
+/**
+ * The Express build capped every request body at 256 kB on the body parser. Next
+ * imposes no such limit on a route handler, so the cap lives in parseBody and this
+ * pins the number rather than the mechanism.
+ */
+describe('the request body limit', () => {
+  const validate = readFileSync(new URL('../lib/server/validate.ts', import.meta.url), 'utf8');
+
+  it('is still 256 kB', () => {
+    assert.match(validate, /MAX_BODY_BYTES = 256 \* 1024/);
+  });
+
+  it('checks the declared length and the real length', () => {
+    assert.match(validate, /content-length/);
+    assert.match(validate, /Buffer\.byteLength\(text, 'utf8'\) > maxBytes/);
+  });
+
+  it('is applied by parseBody itself, so no route can forget it', () => {
+    assert.match(validate, /export async function parseBody[^]*?maxBytes = MAX_BODY_BYTES/);
   });
 });

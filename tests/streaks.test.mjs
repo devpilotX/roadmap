@@ -15,7 +15,7 @@ import {
   currentStreak,
   dayColour,
   longestStreak,
-} from '../src/lib/streaks.mjs';
+} from '../lib/streaks.ts';
 import { perfectStudyLog, studyDay } from './helpers.mjs';
 
 describe('the six conditions of a study day', () => {

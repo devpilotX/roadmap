@@ -10,12 +10,28 @@ Every command assumes you are in the project root and `.env` is filled in.
 ## 0. Is it actually broken?
 
 ```bash
-node -e "import('./src/db/pool.mjs').then(async m => { console.log('db:', await m.ping()); await m.closePool(); })"
+curl -s http://127.0.0.1:3000/api/healthz
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login
 ```
 
-`200` from `/login` and `db: true` means the stack is up. `/api/health` answers
-**401** without a session, which is correct, not a fault.
+`/api/healthz` needs no session and answers the only question that matters first:
+
+```json
+{ "ok": true, "data": { "db": "up", "today": "2026-08-29", "block": "LEARN", "env": "production" } }
+```
+
+It answers **503** with `"db": "down"` when MySQL cannot be reached, which is what
+the container health check and any monitor should watch. `/healthz` is kept as an
+alias, so an existing nginx or monitor configuration still works.
+
+`200` from `/login` and `"db": "up"` means the stack is up. Every other endpoint
+answers **401** without a session, which is correct, not a fault.
+
+To ask the database directly, without the application:
+
+```bash
+npx tsx -e "import('./lib/db/pool.ts').then(async m => { console.log('db:', await m.ping()); await m.closePool(); })"
+```
 
 Where the logs are:
 
@@ -287,7 +303,7 @@ node scripts/export-all.mjs --zip           # CSV + all.json + MANIFEST.txt, zip
 Or from the app: `GET /api/export/all.json` and `GET /api/export/:table.csv`.
 
 The table list is shared between the API and the script
-(`src/lib/exportTables.mjs`), so nothing can be exportable in one and missing from
+(`lib/exportTables.ts`), so nothing can be exportable in one and missing from
 the other.
 
 ---
@@ -338,7 +354,7 @@ plainly when it is running on a fake clock, but a forgotten `FAKE_TODAY` will
 happily let you log the wrong day.
 
 If dates look shifted by one, check that the pool still sets
-`time_zone = '+05:30'` and that `dateStrings` is still on in `src/db/pool.mjs`.
+`time_zone = '+05:30'` and that `dateStrings` is still on in `lib/db/pool.ts`.
 Those two settings are the reason a calendar date can never drift.
 
 
@@ -347,7 +363,7 @@ Those two settings are the reason a calendar date can never drift.
 ## 12. Going onto the internet
 
 Work top to bottom. All of this was checked before the first deployment, and is
-worth re-checking after any change to `.env` or `src/server.mjs`.
+worth re-checking after any change to `.env` or `next.config.ts`.
 
 ### 12.1 The environment
 
@@ -366,10 +382,10 @@ development ones have been sitting on a laptop.
 
 ### 12.2 The proxy must overwrite X-Forwarded-For
 
-`TRUST_PROXY=1` tells Express to believe that header. If the proxy *appends* to
-whatever the client sent rather than replacing it, a visitor can put any address
-they like at the front and the login rate limiter counts them as a new person every
-time. In nginx:
+`TRUST_PROXY=1` tells `lib/server/rateLimit.ts` to believe that header. If the
+proxy *appends* to whatever the client sent rather than replacing it, a visitor can
+put any address they like at the front and the login rate limiter counts them as a
+new person every time. In nginx:
 
 ```nginx
 proxy_set_header X-Forwarded-For $remote_addr;      # set, not add
@@ -428,17 +444,31 @@ npm audit --omit=dev        # expect: found 0 vulnerabilities
 npm ci --omit=dev           # exactly the lockfile, no dev tree
 ```
 
-`express-rate-limit` is pinned at **8.6.2** for a reason. 8.1.0 pulled in
-`ip-address` 10.0.1, which carries two high severity advisories. One of them has
-`Address4` read a leading-zero octet as decimal where a resolver reads it as octal,
-and this application calls `ipKeyGenerator(req.ip)` on every login attempt, so it
-was reachable rather than theoretical. Do not pin it back.
+Rate limiting is now written into `lib/server/rateLimit.ts` rather than taken from
+a package. That removed `express-rate-limit`, and with it the `ip-address`
+dependency whose two high severity advisories had to be pinned around: 8.1.0
+pulled in `ip-address` 10.0.1, where `Address4` read a leading-zero octet as
+decimal while a resolver reads it as octal, and the login path called
+`ipKeyGenerator(req.ip)` on every attempt, so it was reachable rather than
+theoretical.
+
+The limits themselves are unchanged: five login or signup attempts per fifteen
+minutes per address and per email, six GitHub syncs per five minutes, and a wide
+per minute ceiling on everything else. The counters live in process memory, which
+is exactly where `express-rate-limit` kept them, so the guarantee is the same and a
+restart still clears them.
+
+**One thing to know before you scale out.** Those counters are per process. Run two
+instances behind nginx and the effective limit doubles. For one person's tracker
+that is irrelevant; if it ever stops being one person's tracker, move the counters
+into MySQL or Redis before adding the second instance.
 
 ### 12.6 What is deliberately not exposed
 
-- `public/uploads` is mounted as static, but the directory does not exist and no
-  route writes to it, so nothing is served. If you ever add avatar uploads,
-  remember that mount is **unauthenticated**: put the files elsewhere or guard it.
+- There is no upload mount at all. The Express build mounted `public/uploads` as
+  static, unauthenticated, against a directory that never existed. Next serves only
+  what is in `public/`, and nothing writes there. If you ever add avatar uploads,
+  do not put them under `public/`: anything in it is world readable by design.
 - `user_settings.public_progress` and `public_slug` are stored and **nothing serves
   a public page**. Turning the switch on publishes nothing, and /profile says so in
   as many words.
@@ -462,43 +492,64 @@ Then add the cron entries from the README, and rehearse a restore into a scratch
 database as described in section 1. A backup you have never restored is a hope.
 
 
-### 12.8 Restart after changing anything under src/
+### 12.8 Rebuild and restart after changing code
 
-Static files are served from disk, so a change to `public/js` or `public/css` is
-live on the next request, subject to the service worker cache in 12.9. **Server
-code is not.** `src/**` is loaded once at boot, so a changed route handler keeps
-serving the old response until the process restarts.
+There are no files served straight from disk any more. `npm run build` compiles
+everything, `npm start` serves the compiled output, and **nothing you change on
+disk is live until you do both**:
 
-This is not theoretical. It produced exactly one bug: `/roles` was extended to
-return `applications`, `where_to_apply`, `interview_prep`, `resume_stages` and
-`unlocks`, the browser picked up the new module immediately, the server kept
-returning the old payload, and the screen died on
+```bash
+npm run build && npm start        # or: docker compose up --build -d app
+```
+
+In development `npm run dev` recompiles on save and needs neither.
+
+The hazard the Express build had is smaller but has not gone. There, the client
+picked up a new module immediately while the server kept the old handler, and that
+produced exactly one bug: `/roles` was extended to return `applications`,
+`where_to_apply`, `interview_prep`, `resume_stages` and `unlocks`, the browser
+loaded the new screen, the server returned the old payload, and the screen died on
 `Cannot read properties of undefined (reading 'total')`.
 
-To tell whether a running server is stale:
+A Next build compiles the screen and the route together, so those two cannot
+disagree **within one deployment**. They can still disagree across one: a browser
+holding an old page open talks to a new server, or the service worker in 12.9
+serves a cached page. To tell whether a running server is stale:
 
 ```bash
 # when the process started
-ps -o lstart= -p "$(pgrep -f 'node src/server.mjs' | head -1)"
-# when the server code last changed
-find src -name '*.mjs' -newermt "$(ps -o lstart= -p "$(pgrep -f 'node src/server.mjs' | head -1)")" | head
+ps -o lstart= -p "$(pgrep -f 'next start|node server.js' | head -1)"
+# when the build was produced
+stat -c '%y' .next/BUILD_ID
 ```
 
-Anything listed is newer than the running process. Restart it.
+If `BUILD_ID` is newer than the process, restart it. If your source is newer than
+`BUILD_ID`, you have not rebuilt.
 
-Screens are written to survive this: each one normalises the payload and mounts its
-panels independently, so a field the server does not send costs one panel and a
-plain explanation, not the page. That is a safety net, not a substitute for the
-restart.
+Screens are still written to survive a mismatch: each one normalises the payload
+and renders its panels independently, so a field the server does not send costs one
+panel and a plain explanation, not the page. That is a safety net, not a substitute
+for the rebuild.
 
 ### 12.9 The service worker cache
 
-`public/js/sw.js` serves everything under `/css` and `/js` **cache first**, and only
-evicts when its `VERSION` constant changes. A CSS or JS change is therefore
-invisible to a browser that has visited before, however many times you reload.
+`public/sw.js` is the offline shell. Two caches, and what happens to each on a
+release is different:
 
-**Bump `VERSION` in `public/js/sw.js` on every release that touches `public/`.**
-It is at the top of the file with a changelog comment. Currently `v2`.
+- **the build output**, everything under `/_next/static/`, is cached on first use
+  and never revalidated, which is safe because every one of those filenames
+  carries a content hash. A new build produces new names, so there is nothing
+  stale to serve.
+- **pages** are network first. A reload gets the new HTML whenever the server is
+  reachable, and the cached copy is only used when it is not.
+- **the icons and the manifest** are the only fixed URLs, and they are cache first.
+
+That is the one thing a release can leave stale, and it is why `VERSION` exists.
+
+**Bump `VERSION` in `public/sw.js` when you change an icon or the manifest.** It is
+at the top of the file with a changelog comment. Currently `v3`. The Express build
+needed a bump on every CSS or JS change; this one does not, because those files are
+hashed.
 
 To clear it by hand while developing: DevTools, Application, Service Workers,
 Unregister, then hard reload.

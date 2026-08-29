@@ -12,9 +12,9 @@
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { conditionsFor, currentStreak, dayColour, longestStreak } from '../src/lib/streaks.mjs';
-import { evaluateWarnings } from '../src/lib/warnings.mjs';
-import { config } from '../src/config.mjs';
+import { conditionsFor, currentStreak, dayColour, longestStreak } from '../lib/streaks.ts';
+import { evaluateWarnings } from '../lib/warnings.ts';
+import { config } from '../lib/config.ts';
 import { perfectStudyLog, quietContext, studyDay } from './helpers.mjs';
 
 describe('the window itself does not move', () => {
