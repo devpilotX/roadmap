@@ -6,12 +6,9 @@
  * without the plan it was measured against.
  */
 
-import { useState } from 'react';
 import { Icon } from '@/components/Icon';
-import { useToast } from '@/components/ToastProvider';
 import { Section } from '@/components/ui/Basics';
 import { Switch } from '@/components/ui/Controls';
-import { api, ApiError } from '@/lib/client/api';
 import type { MeSettings } from './types';
 
 const ICON_DOWNLOAD = 'M12 3v12M8 11l4 4 4-4M4 19h16';
@@ -91,34 +88,20 @@ function TableLinks({ names }: { names: string[] }) {
 }
 
 export function DataSection({ settings }: { settings: MeSettings }) {
-  const { toastOk, toastError } = useToast();
-
-  const [publicProgress, setPublicProgress] = useState(Boolean(settings.public_progress));
-  const [slug, setSlug] = useState(settings.public_slug ?? '');
-  const [everGenerated, setEverGenerated] = useState(Boolean(settings.public_slug));
-  const [busy, setBusy] = useState(false);
-
-  const slugLine = slug
-    ? `Your public slug is ${slug}.`
-    : everGenerated
-      ? 'No public slug has been generated yet.'
-      : 'No public slug has been generated yet. One is created the first time you turn this on.';
-
-  const toggle = async (want: boolean) => {
-    setPublicProgress(want);
-    setBusy(true);
-    try {
-      const fresh = await api.patch<MeSettings>('/api/me/settings', { public_progress: want });
-      setSlug(fresh.public_slug ?? '');
-      setEverGenerated(true);
-      toastOk(want ? 'Public progress turned on.' : 'Public progress turned off.');
-    } catch (err) {
-      setPublicProgress(!want);
-      toastError((err as ApiError).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  /**
+   * Public progress is a switch with nothing on the other end of it.
+   *
+   * PATCH /api/me/settings does store the flag and does mint a slug, but no route
+   * in this build serves a public page for that slug, so turning it on changed a
+   * row and nothing else: the person is told their progress is public when it is
+   * not published anywhere, which is the worst of the three possible states. It is
+   * disabled and labelled rather than deleted, because the flag and the slug are
+   * real columns that appear in your own export, and hiding the control would hide
+   * that fact rather than explain it. The switch comes back on the day there is a
+   * page behind it.
+   */
+  const publicProgress = Boolean(settings.public_progress);
+  const slug = settings.public_slug ?? '';
 
   return (
     <Section
@@ -148,19 +131,28 @@ export function DataSection({ settings }: { settings: MeSettings }) {
       <div className="stack-sm">
         <Switch
           checked={publicProgress}
-          disabled={busy}
-          onChange={(want) => void toggle(want)}
+          disabled
+          // Disabled, so this can never fire. It exists because Switch is a
+          // controlled component and every controlled component in this build owns
+          // its handler; there is deliberately no write behind it.
+          onChange={() => undefined}
           label={
             <span className="stack-sm">
-              <span className="text-sm">Make my progress public</span>
+              <span className="text-sm">Make my progress public, not available yet</span>
               <span className="field__hint">
-                This stores a flag and a random slug against your account. Nothing in this build
-                serves a public page yet, so turning it on does not expose anything today.
+                Nothing in this build serves a public page, so there is nothing for this switch to
+                turn on, and it cannot be moved until there is a page behind it. Whichever way it is
+                sitting, no page of yours is being served. The flag and the slug are real columns and
+                are in your export either way.
               </span>
             </span>
           }
         />
-        <p className="text-sm muted">{slugLine}</p>
+        {slug ? (
+          <p className="text-sm muted">{`Your account already holds the slug ${slug}, from before this control was disabled. Nothing serves it.`}</p>
+        ) : (
+          <p className="text-sm muted">No public slug has been generated for your account.</p>
+        )}
       </div>
     </Section>
   );

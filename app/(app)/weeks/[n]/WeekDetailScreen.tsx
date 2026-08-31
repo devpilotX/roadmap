@@ -354,20 +354,35 @@ export function WeekDetailScreen({ n, today }: { n: number; today: string }) {
       </section>
 
       <section className="stack" aria-label="Week detail">
+        {/* A `<ul>` with nothing in it renders as a blank gap under a heading, which
+            looks like the fetch half failed. Each list says what an empty one means
+            instead, and points at the one part of the week that is never empty. */}
         <Section title="Learn">
-          <ul>
-            {d.learn.map((r) => (
-              <li key={r.id}>{r.text}</li>
-            ))}
-          </ul>
+          {d.learn.length ? (
+            <ul>
+              {d.learn.map((r) => (
+                <li key={r.id}>{r.text}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No learn list was seeded for week {w.n}. Focus above is the whole instruction for it.
+            </p>
+          )}
         </Section>
 
         <Section title="Build">
-          <ul>
-            {d.build.map((r) => (
-              <li key={r.id}>{r.text}</li>
-            ))}
-          </ul>
+          {d.build.length ? (
+            <ul>
+              {d.build.map((r) => (
+                <li key={r.id}>{r.text}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              No build list was seeded for week {w.n}. Focus above is the whole instruction for it.
+            </p>
+          )}
         </Section>
 
         <Section
@@ -384,31 +399,52 @@ export function WeekDetailScreen({ n, today }: { n: number; today: string }) {
         </Section>
 
         <Section title="Ships at the end of this week">
-          <ul>
-            {d.ships.map((r) => (
-              <li key={r.id}>{r.text}</li>
-            ))}
-          </ul>
+          {d.ships.length ? (
+            <ul>
+              {d.ships.map((r) => (
+                <li key={r.id}>{r.text}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">
+              Nothing ships at the end of week {w.n}. The six day ticks are the whole measure of it.
+            </p>
+          )}
         </Section>
 
-        <Callout tone="red" title="The trap">
-          <p>{d.trap ?? ''}</p>
-        </Callout>
+        {/* Not every week in the seed carries a trap or a note. An empty callout is
+            a red box that says "The trap" and then nothing, which reads as a
+            failed load rather than as a week with nothing to warn about, so the
+            callout only exists when there is something in it. */}
+        {d.trap ? (
+          <Callout tone="red" title="The trap">
+            <p>{d.trap}</p>
+          </Callout>
+        ) : null}
 
-        <Callout tone="blue" title="Note">
-          <p>{d.note ?? ''}</p>
-        </Callout>
+        {d.note ? (
+          <Callout tone="blue" title="Note">
+            <p>{d.note}</p>
+          </Callout>
+        ) : null}
 
         <Section title={`Links for this week, ${d.links.length}`}>
-          <div>
-            {d.links.map((link) => (
-              <LinkRow
-                key={link.id}
-                link={link}
-                onStatus={(next, write) => setLinkStatus(link, next, write)}
-              />
-            ))}
-          </div>
+          {d.links.length ? (
+            <div>
+              {d.links.map((link) => (
+                <LinkRow
+                  key={link.id}
+                  link={link}
+                  onStatus={(next, write) => setLinkStatus(link, next, write)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="muted">
+              No links were seeded for week {w.n}. Every resource in the plan is on the Library
+              screen, filterable by week.
+            </p>
+          )}
         </Section>
 
         {d.sunday ? (

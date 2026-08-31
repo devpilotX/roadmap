@@ -20,9 +20,9 @@
  * PATCH /api/deals/:id and PATCH /api/money-gates/:code/result.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useDebounced, useResource } from '@/components/ui/useResource';
-import { ErrorCard, LoadingCard } from '@/components/ui/Basics';
+import { Callout, ErrorCard, LoadingCard } from '@/components/ui/Basics';
 import { useToast } from '@/components/ToastProvider';
 import { MoneyStrip } from './MoneyStrip';
 import { MoneyToday } from './MoneyToday';
@@ -100,110 +100,136 @@ export function MoneyScreen() {
     [setLeads, toast, toastError]
   );
 
-  const error =
-    summary.error ?? leads.error ?? deals.error ?? care.error ?? scripts.error ?? null;
-
-  if (error) {
-    return (
-      <section className="stack" aria-label="Money at a glance">
-        <ErrorCard message={error} />
-      </section>
-    );
-  }
-
   const s = summary.data;
   const l = leads.data;
   const d = deals.data;
   const c = care.data;
   const sc = scripts.data;
 
-  if (!s || !l || !d || !c || !sc) {
-    return (
-      <>
-        <section className="stack" aria-label="Money at a glance">
-          <LoadingCard text="Loading money at a glance." />
-        </section>
-        <section className="stack" aria-label="Today's fifteen">
-          <LoadingCard text="Loading today's fifteen." />
-        </section>
-        <section className="stack" aria-label="The pipeline">
-          <LoadingCard text="Loading the pipeline." />
-        </section>
-        <section className="stack" aria-label="Deals">
-          <LoadingCard text="Loading deals." />
-        </section>
-        <section className="stack" aria-label="Offers">
-          <LoadingCard text="Loading offers." />
-        </section>
-        <section className="stack" aria-label="The weekly plan">
-          <LoadingCard text="Loading the weekly plan." />
-        </section>
-        <section className="stack" aria-label="Money gates">
-          <LoadingCard text="Loading money gates." />
-        </section>
-        <section className="stack" aria-label="Charts">
-          <LoadingCard text="Loading charts." />
-        </section>
-        <section className="stack" aria-label="Scripts">
-          <LoadingCard text="Loading scripts." />
-        </section>
-        <section className="stack" aria-label="Rules">
-          <LoadingCard text="Loading rules." />
-        </section>
-      </>
-    );
-  }
+  /**
+   * Ten panels, five endpoints, and no shared fate.
+   *
+   * This screen used to collapse every source into one `error` and one all or
+   * nothing loading gate, so a single 500 from /api/money/scripts blanked the
+   * target, the fifteen touches, the pipeline, the deals and the gates with it:
+   * nine panels that had their rows in hand and could have drawn them. Each panel
+   * is now listed against the sources it actually reads, and its three states are
+   * resolved on their own:
+   *   - rows in hand, draw them, and if a later refresh failed say so above them
+   *     rather than throwing already good data away,
+   *   - nothing to draw and an error, show that error here and nowhere else,
+   *   - neither, keep the named loading card the panel had before, because a
+   *     screen taking shape says more than one blank word.
+   * The sentence shown is always the server's own. No failure is swallowed.
+   */
+  const panels: {
+    label: string;
+    loadingText: string;
+    error: string | null;
+    node: ReactNode | null;
+  }[] = [
+    {
+      label: 'Money at a glance',
+      loadingText: 'Loading money at a glance.',
+      error: summary.error,
+      node: s ? <MoneyStrip summary={s} /> : null,
+    },
+    {
+      label: "Today's fifteen",
+      loadingText: "Loading today's fifteen.",
+      error: summary.error ?? leads.error,
+      node: s && l ? <MoneyToday summary={s} leads={l} onLogged={afterLeadWrite} /> : null,
+    },
+    {
+      label: 'The pipeline',
+      loadingText: 'Loading the pipeline.',
+      error: summary.error ?? leads.error,
+      node:
+        s && l ? (
+          <MoneyPipeline
+            summary={s}
+            leads={l}
+            filters={filters}
+            onFilterChange={setFilters}
+            query={query}
+            onQueryChange={onQueryChange}
+            onMove={onMove}
+            onDone={afterLeadWrite}
+          />
+        ) : null,
+    },
+    {
+      label: 'Deals',
+      loadingText: 'Loading deals.',
+      // Four sources, because a deal row is drawn with its lead, its care plan and
+      // the summary's own arithmetic. Any one of them missing means no deals table.
+      error: summary.error ?? leads.error ?? deals.error ?? care.error,
+      node:
+        s && l && d && c ? (
+          <MoneyDeals summary={s} leads={l} deals={d} care={c} onDone={afterDealWrite} />
+        ) : null,
+    },
+    {
+      label: 'Offers',
+      loadingText: 'Loading offers.',
+      error: summary.error,
+      node: s ? <MoneyOffers summary={s} /> : null,
+    },
+    {
+      label: 'The weekly plan',
+      loadingText: 'Loading the weekly plan.',
+      error: summary.error,
+      node: s ? <MoneyPlan summary={s} /> : null,
+    },
+    {
+      label: 'Money gates',
+      loadingText: 'Loading money gates.',
+      error: summary.error,
+      node: s ? <MoneyGates summary={s} /> : null,
+    },
+    {
+      label: 'Charts',
+      loadingText: 'Loading charts.',
+      error: summary.error,
+      node: s ? <MoneyCharts summary={s} /> : null,
+    },
+    {
+      label: 'Scripts',
+      loadingText: 'Loading scripts.',
+      // The only panel that reads /api/money/scripts, and the reason the old
+      // single gate was so expensive: this endpoint failing cost nine other panels.
+      error: scripts.error,
+      node: sc ? <MoneyScripts scripts={sc} /> : null,
+    },
+    {
+      label: 'Rules',
+      loadingText: 'Loading rules.',
+      error: summary.error,
+      node: s ? <MoneyRules summary={s} /> : null,
+    },
+  ];
 
   return (
     <>
-      <section className="stack" aria-label="Money at a glance">
-        <MoneyStrip summary={s} />
-      </section>
-
-      <section className="stack" aria-label="Today's fifteen">
-        <MoneyToday summary={s} leads={l} onLogged={afterLeadWrite} />
-      </section>
-
-      <section className="stack" aria-label="The pipeline">
-        <MoneyPipeline
-          summary={s}
-          leads={l}
-          filters={filters}
-          onFilterChange={setFilters}
-          query={query}
-          onQueryChange={onQueryChange}
-          onMove={onMove}
-          onDone={afterLeadWrite}
-        />
-      </section>
-
-      <section className="stack" aria-label="Deals">
-        <MoneyDeals summary={s} leads={l} deals={d} care={c} onDone={afterDealWrite} />
-      </section>
-
-      <section className="stack" aria-label="Offers">
-        <MoneyOffers summary={s} />
-      </section>
-
-      <section className="stack" aria-label="The weekly plan">
-        <MoneyPlan summary={s} />
-      </section>
-
-      <section className="stack" aria-label="Money gates">
-        <MoneyGates summary={s} />
-      </section>
-
-      <section className="stack" aria-label="Charts">
-        <MoneyCharts summary={s} />
-      </section>
-
-      <section className="stack" aria-label="Scripts">
-        <MoneyScripts scripts={sc} />
-      </section>
-
-      <section className="stack" aria-label="Rules">
-        <MoneyRules summary={s} />
-      </section>
+      {panels.map((p) => (
+        <section className="stack" aria-label={p.label} key={p.label}>
+          {p.node ? (
+            <>
+              {p.error ? (
+                <Callout tone="orange" title="That did not refresh">
+                  <p>{p.error}</p>
+                  <p>What is below is the last good answer this panel had.</p>
+                </Callout>
+              ) : null}
+              {p.node}
+            </>
+          ) : p.error ? (
+            <ErrorCard message={p.error} />
+          ) : (
+            <LoadingCard text={p.loadingText} />
+          )}
+        </section>
+      ))}
     </>
   );
 }

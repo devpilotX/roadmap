@@ -29,12 +29,25 @@ export interface WarningsBellProps {
   onCount: (n: number) => void;
 }
 
+/**
+ * Everything inside `root` that a keyboard can land on. Mirrors the helper in
+ * components/AccountMenu.tsx, which is the reference for this pattern.
+ */
+function focusables(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], select, input, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null);
+}
+
 export function WarningsBell({ open, onClose, onCount }: WarningsBellProps) {
   const { toastError } = useToast();
   const [warnings, setWarnings] = useState<Warning[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -64,7 +77,33 @@ export function WarningsBell({ open, onClose, onCount }: WarningsBellProps) {
     // last in the tree, so reaching the contents means tabbing through the page.
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        // preventDefault so Escape does not also reach the browser and, for
+        // instance, stop the /api/warnings poll mid flight.
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      // And Tab stays inside it. Focus starting on the close button is only half
+      // the fix: the next Tab used to leave for the page underneath, which is the
+      // page this dialog claims to be modal over. The snooze buttons come and go
+      // with the warnings, so the list of stops is read on every keystroke rather
+      // than captured when the dialog opened.
+      if (e.key !== 'Tab') return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = focusables(panel);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -93,7 +132,7 @@ export function WarningsBell({ open, onClose, onCount }: WarningsBellProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal__panel">
+      <div className="modal__panel" ref={panelRef}>
         <div className="between">
           <h2 id="bell-title" className="card__title">
             Active warnings

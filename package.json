@@ -11,7 +11,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
-    "lint": "next lint",
+    "lint": "eslint app components lib --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "parse": "node scripts/seed-from-md.mjs",
     "migrate": "tsx scripts/migrate.mjs",

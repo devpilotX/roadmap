@@ -2,6 +2,11 @@
  * POST /api/warnings/:code/snooze
  *
  * An orange warning can be snoozed for 24 hours, once a day. Red cannot.
+ *
+ * snoozeWarning throws for the two conditions that are not rule violations: an
+ * unknown code is 404 and a warning already snoozed today is 409. The only
+ * failure it returns is the red means red rule, which is shown verbatim as 422
+ * because a rule from final.md is what the caller has run into.
  */
 
 import { snoozeWarning } from '@/lib/db/warnings';

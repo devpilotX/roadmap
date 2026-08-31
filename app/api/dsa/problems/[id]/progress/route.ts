@@ -47,12 +47,26 @@ export const PATCH = authedRoute<{ id: string }>(async ({ request, params, user 
   }
 
   const result = await transaction(async (tx) => {
-    const before = await tx.one(
-      'SELECT status, times_solved, times_failed, last_solved_on FROM dsa_progress WHERE user_id = ? AND problem_id = ?',
-      [user.id, problem.id]
-    );
+    // The row has to exist before it can be locked, so the upsert comes first.
+    // uq_user_problem (user_id, problem_id) makes this statement the lock: a
+    // second request for the same problem waits here until the first commits.
     await tx.run(
       'INSERT INTO dsa_progress (user_id, problem_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE problem_id = VALUES(problem_id)',
+      [user.id, problem.id]
+    );
+    // FOR UPDATE, because everything below is a read-modify-write and the
+    // previous status is what decides it: whether times_solved goes up, and
+    // whether this day's dsa_solved goes up. Read without a lock, two requests
+    // arriving together both saw 'todo', both treated the problem as newly
+    // solved, and the day's count went up twice for one problem while
+    // dsa_progress held a single row saying it was solved once. A locking read
+    // sees what the other transaction committed rather than the snapshot taken
+    // before it did.
+    const before = await tx.one(
+      `SELECT status, times_solved, times_failed, last_solved_on
+         FROM dsa_progress
+        WHERE user_id = ? AND problem_id = ?
+          FOR UPDATE`,
       [user.id, problem.id]
     );
 

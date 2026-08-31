@@ -5,6 +5,13 @@ at 23:00 with the streak on the line.
 
 Every command assumes you are in the project root and `.env` is filled in.
 
+The scripts under `scripts/` import the TypeScript modules in `lib/`, so they run
+through `tsx`: **`npx tsx scripts/NAME.mjs`, never `node scripts/NAME.mjs`**, which
+fails with `ERR_MODULE_NOT_FOUND`. The `npm run` entries already do this. That also
+means `tsx` and `typescript` are needed at run time on the server even though they
+are devDependencies, which is why no `npm ci` here uses `--omit=dev`. Auditing with
+`--omit=dev` is a different question and is still right.
+
 ---
 
 ## 0. Is it actually broken?
@@ -61,9 +68,16 @@ gunzip -c backups/roadmap_tracker-2026-08-28-0230.sql.gz | mysql -h 127.0.0.1 -u
 # 4. Check it against the contract
 DB_NAME=roadmap_restore_test npm run verify
 
-# 5. Only when that passes, swap for real
-#    Stop the app first, so nothing writes during the restore.
+# 5. Take a dump of the live database as it stands, before you drop it.
+#    Step 4 proves the archive restores; it cannot prove the archive is the copy
+#    you meant. Once the DROP has run, the current state is gone, so this is the
+#    only way back if the wrong file was chosen.
 systemctl stop roadmap-tracker         # or: docker compose stop app
+./scripts/backup.sh                    # bash and mysqldump only, no Node needed
+ls -lt backups/*.sql.gz | head -2      # the newest file is the pre-drop copy
+
+# 6. Only now, swap for real. The app is already stopped, so nothing writes
+#    during the restore.
 mysql -h 127.0.0.1 -u root -p -e "DROP DATABASE roadmap_tracker; CREATE DATABASE roadmap_tracker CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 gunzip -c backups/roadmap_tracker-2026-08-28-0230.sql.gz | mysql -h 127.0.0.1 -u root -p roadmap_tracker
 npm run verify
@@ -79,6 +93,18 @@ other way, check:
 ```sql
 SHOW TRIGGERS FROM roadmap_tracker;
 ```
+
+**A dump taken before 31 August 2026 carries the pre-005 triggers.** Restoring one
+reinstates `trg_day_logs_no_backdate_upd` in its original, too-wide form, which
+refuses the application's own derived recomputation on any day older than seven
+days. After restoring an old dump, re-apply the migration:
+
+```bash
+npx tsx scripts/migrate.mjs --status      # 005_hardening.sql will show as pending
+npm run migrate
+```
+
+Section 13 explains what that trigger does and does not block.
 
 **Lost sessions are expected.** Restoring drops the `sessions` table contents, so
 everyone signs in again. That is not damage.
@@ -134,7 +160,7 @@ live until GitHub says otherwise.
 5. **Confirm the mode changed:**
 
    ```bash
-   node scripts/sync-github.mjs --user=you@example.com
+   npx tsx scripts/sync-github.mjs --user=you@example.com
    ```
 
    The report should say `mode authenticated` and a budget of 5,000 an hour. If it
@@ -220,9 +246,9 @@ deferred, because `final.md` does not contain the 474 problem names. See section
 ## 6. Import the 474 DSA problems
 
 ```bash
-node scripts/import-dsa.mjs export.csv                 # dry run, always first
-node scripts/import-dsa.mjs export.csv --write          # after the report looks right
-node scripts/import-dsa.mjs export.csv --write --user=you@example.com   # also import solved status
+npx tsx scripts/import-dsa.mjs export.csv                 # dry run, always first
+npx tsx scripts/import-dsa.mjs export.csv --write          # after the report looks right
+npx tsx scripts/import-dsa.mjs export.csv --write --user=you@example.com   # also import solved status
 ```
 
 The column mapping is printed on every run and documented at the top of the
@@ -242,8 +268,8 @@ nineteenth step would be an invention.
 ## 7. A link went dead
 
 ```bash
-node scripts/check-links.mjs --dry-run --limit=20   # see the shape of it
-node scripts/check-links.mjs                        # write is_alive and last_checked
+npx tsx scripts/check-links.mjs --dry-run --limit=20   # see the shape of it
+npx tsx scripts/check-links.mjs                        # write is_alive and last_checked
 ```
 
 The rule is fixed: **a dead link is flagged, never deleted.** The checker
@@ -266,7 +292,7 @@ seconds; `--delay` cannot go below 1000 ms.
 Run it directly and read the report:
 
 ```bash
-node scripts/sync-github.mjs --user=you@example.com
+npx tsx scripts/sync-github.mjs --user=you@example.com
 ```
 
 - **`no username`** — set the GitHub username on `/profile`.
@@ -286,7 +312,7 @@ To force a full re-read of history, drop the stored ETags:
 DELETE FROM github_sync_state WHERE user_id = 1;
 ```
 
-Then `node scripts/sync-github.mjs --since=2026-08-28`.
+Then `npx tsx scripts/sync-github.mjs --since=2026-08-28`.
 
 Manual entry on `/pushes` always works. A sync that cannot run is an
 inconvenience, never a dead end.
@@ -296,8 +322,8 @@ inconvenience, never a dead end.
 ## 9. Get all the data out
 
 ```bash
-node scripts/export-all.mjs --dry-run       # list what would be written
-node scripts/export-all.mjs --zip           # CSV + all.json + MANIFEST.txt, zipped
+npx tsx scripts/export-all.mjs --dry-run       # list what would be written
+npx tsx scripts/export-all.mjs --zip           # CSV + all.json + MANIFEST.txt, zipped
 ```
 
 Or from the app: `GET /api/export/all.json` and `GET /api/export/:table.csv`.
@@ -311,28 +337,44 @@ the other.
 ## 10. Deploy a change
 
 ```bash
-npm test                    # 500+ tests, and they are fast
+npm test                    # 518 tests. 60 skip without a server, which is section 1 of the QA report
 npm run verify              # the seed contract still holds
 ./scripts/backup.sh         # before, not after
-git pull && npm ci --omit=dev
+git pull
+npm ci                      # NOT --omit=dev. tsx and typescript are devDependencies,
+                            # and npm run verify below and four of the five cron
+                            # jobs all run through tsx
+npm run build               # nothing you pulled is live until this runs
+npm run verify              # again, in case the pull carried a migration
 systemctl restart roadmap-tracker
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/login   # expect 200
 ```
 
+`npm ci --omit=dev` is the right instinct on a server and the wrong command here,
+because it removes the runtime every operational script needs. The `npm run verify`
+above would fail with `tsx: not found`, and so would the link check, the export, the
+GitHub sync and the digest. Only `scripts/backup.sh` survives it, being bash and
+`mysqldump`. `npm audit --omit=dev` is still the right way to audit the production
+tree: auditing and installing are different questions.
+
 If `npm test` reports the HTTP tests as skipped, no server was listening. Start
 one and run it again to get that coverage.
 
-To prove the screens actually draw against the real database, not just that their
-wiring is consistent, run the end to end harness with the server up:
+To prove the whole surface answers against the real database, not just that the
+wiring is consistent, run the smoke test with the server up:
 
 ```bash
-npm install linkedom --no-save
-node scripts/smoke-screens.mjs
+npm run smoke -- --email=you@example.com --password=...
 ```
 
-It signs up a throwaway account, drives all 23 pages, asserts every container
-filled, and deletes the account again. Expect the last line to read
-`23 of 23 screens filled every container.`
+It signs in as a real account, then asserts that all 23 pages answer 200 carrying
+their own heading, that all 34 read endpoints return the keys their screen reads,
+that nothing private is reachable without a session, and that a write without a
+CSRF token is refused. It writes nothing but the session row, which it deletes.
+
+It does not check that a screen visibly fills its panels: the data arrives after
+hydration, so that needs a real browser. Point Playwright at the same list when you
+want that.
 
 ---
 
@@ -400,9 +442,10 @@ proxy in front that you also control.
 
 `/signup` is reachable by anyone who finds it, so it is gated. With `ALLOW_SIGNUP`
 unset, signup is open only while the `users` table is empty: the first run creates
-the account and the door shuts behind it. After that both `GET /signup` and
-`POST /api/auth/signup` answer **403 `SIGNUP_CLOSED`**, and `/login` stops offering
-the link.
+the account and the door shuts behind it. After that `POST /api/auth/signup` answers
+**403 `SIGNUP_CLOSED`**, and `GET /signup` answers **200 with a page that says
+account creation is closed** — a person who navigated there is shown a sentence
+rather than a status code — and `/login` stops offering the link.
 
 To recreate a lost account: set `ALLOW_SIGNUP=true`, restart, sign up, then **unset
 it and restart again**.
@@ -419,8 +462,11 @@ curl -sI https://your-domain/login | grep -i 'strict-transport-security\|set-coo
 curl -s https://your-domain/robots.txt
 #   expect: User-agent: *   then   Disallow: /
 
-curl -s -o /dev/null -w '%{http_code}\n' https://your-domain/signup
-#   expect 403 once the account exists
+curl -s https://your-domain/signup | grep -i 'account creation is closed'
+#   expect a match once the account exists. The page answers 200 and explains
+#   itself; POST /api/auth/signup is the one that answers 403 SIGNUP_CLOSED, and a
+#   bare curl POST cannot tell that apart from the 403 the missing CSRF token
+#   earns, so read the page rather than the status code
 
 curl -s -o /dev/null -w '%{http_code}\n' https://your-domain/
 #   expect 302, to /login
@@ -441,7 +487,7 @@ at the proxy for everything except the health checker.
 
 ```bash
 npm audit --omit=dev        # expect: found 0 vulnerabilities
-npm ci --omit=dev           # exactly the lockfile, no dev tree
+npm ci                      # exactly the lockfile. Not --omit=dev: see section 10
 ```
 
 Rate limiting is now written into `lib/server/rateLimit.ts` rather than taken from
@@ -499,12 +545,23 @@ the account itself, `scripts/reset-password.mjs` is in section 3.
 
 ```bash
 cp .env.example .env && $EDITOR .env     # the production values from 12.1
-npm ci --omit=dev
+# The database and its user have to exist first. No migration creates them.
+mysql -u root -p -e "CREATE DATABASE roadmap_tracker CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+                     CREATE USER 'roadmap'@'localhost' IDENTIFIED BY 'the DB_PASSWORD from .env';
+                     GRANT ALL ON roadmap_tracker.* TO 'roadmap'@'localhost';"
+npm ci                                   # the whole lockfile, dev tree included
 npm run setup                            # parse, migrate, verify
+npm run build                            # npm start has nothing to serve without it
 npm start                                # or the service unit
 # open https://your-domain/signup, create the one account, then it closes itself
 ./scripts/backup.sh                      # prove a backup works before you need one
 ```
+
+Two things that look like they can be trimmed and cannot. `npm ci --omit=dev`
+removes `tsx`, and `npm run setup` on the very next line runs two of its three
+steps through it. Skipping `npm run build` leaves `npm start` serving nothing,
+because there are no files served straight from disk any more; 12.8 is the same
+rule stated again.
 
 Then add the cron entries from the README, and rehearse a restore into a scratch
 database as described in section 1. A backup you have never restored is a hope.
@@ -559,15 +616,108 @@ release is different:
   carries a content hash. A new build produces new names, so there is nothing
   stale to serve.
 - **pages** are network first. A reload gets the new HTML whenever the server is
-  reachable, and the cached copy is only used when it is not.
+  reachable, and the cached copy is only used when it is not. `/login` and `/signup`
+  are never cached, and signing out deletes the whole page cache: without that, the
+  last seen HTML of every screen stayed readable on the device after sign out.
 - **the icons and the manifest** are the only fixed URLs, and they are cache first.
 
 That is the one thing a release can leave stale, and it is why `VERSION` exists.
 
-**Bump `VERSION` in `public/sw.js` when you change an icon or the manifest.** It is
-at the top of the file with a changelog comment. Currently `v3`. The Express build
+**Bump `VERSION` in `public/sw.js` when you change an icon or the manifest**, or when
+you change the caching rules themselves, because the bump is what evicts the existing
+caches on activate. It is at the top of the file with a changelog comment. Currently
+`v4`, where the bump was part of a fix rather than housekeeping: it is what removed
+the page caches written before signing out started clearing them. The Express build
 needed a bump on every CSS or JS change; this one does not, because those files are
 hashed.
 
 To clear it by hand while developing: DevTools, Application, Service Workers,
 Unregister, then hard reload.
+
+---
+
+## 13. "Retroactive editing is limited to 7 days", or the timer will not start
+
+Both of these come from `day_logs` and `study_sessions`, and both changed in
+`migrations/005_hardening.sql`. If you are seeing either symptom on a database that
+predates 31 August 2026, check that 005 is applied before anything else:
+
+```bash
+npx tsx scripts/migrate.mjs --status
+```
+
+### 13.1 What the seven day rule blocks, and what it does not
+
+Part 18.7 rule 3 says a day older than seven days cannot be edited retroactively.
+Two triggers enforce it, and they are not symmetrical.
+
+| Trigger | Fires on | Behaviour |
+| --- | --- | --- |
+| `trg_day_logs_no_backdate_ins` | INSERT | Refuses to create a `day_logs` row dated more than seven days ago. Unchanged by 005 |
+| `trg_day_logs_no_backdate_upd` | UPDATE | Refuses an update to a row older than seven days **only when a column a person enters actually changes** |
+
+Before 005 the UPDATE trigger rejected every update to such a row, whatever the
+column. That was too wide, because the application updates those rows itself:
+`recomputeDay()` writes `pushes`, `money_touches`, `day_colour`, `conditions_met`
+and `week_n`, all of which are projections of other tables rather than history, and
+`recomputeRange()` walks the whole 150 day window whenever the GitHub sync runs, a
+repository is added or reclassified, or the start date moves. From the eighth day of
+real use each of those would have raised SQLSTATE 45000 and surfaced as a 500.
+
+So the rule now reads:
+
+- **Blocked**, with `Retroactive editing is limited to 7 days`: any change to
+  `dsa_solved`, the four block done flags and their minutes, the close and night
+  fields, `money_done`, `money_minutes`, `anki_overdue`, `video_minutes`,
+  `blocked_on`, `notes`, and the row's own `log_date` or `user_id`. Setting one of
+  those to `NULL` is blocked too: the comparison is the null safe `<=>`, so it is
+  not fooled the way a plain `!=` would be.
+- **Allowed**: `pushes`, `money_touches`, `day_colour`, `conditions_met`, `week_n`,
+  and the id and timestamp columns. A GitHub sync that repaints a day in October is
+  not a person rewriting it.
+- **Allowed**: an UPDATE that sets a human column to the value it already holds.
+  Nothing changed, so nothing is refused.
+
+`tests/triggers.test.mjs` pins both halves against the trigger body read verbatim
+out of the migration, so a future edit that widens it again fails the suite.
+
+If you genuinely have to correct an old day, the honest route is a row in
+`audit_log` and a note, not a wider trigger. The rule is from the document.
+
+### 13.2 The timer says a session is already running
+
+`POST /api/sessions/start` refuses when a session is already open **on today's
+date**, and that refusal is correct: stop the one you are running before starting
+another.
+
+A session left open on an **earlier** date is closed automatically instead, with
+`auto_closed = 1` and zero minutes, and the response says which one it closed.
+Nobody can say how long an abandoned timer was really used, so it credits nothing.
+That path exists because the old behaviour was a dead end: the only way to close
+yesterday's session was `POST /api/sessions/:id/stop`, which credits its minutes to
+its own date, and on a date the seven day rule has sealed that INSERT failed and
+rolled the whole transaction back, leaving `ended_at` NULL and the timer bricked
+with no route out except SQL.
+
+Stopping a session dated outside the editable window now closes it and marks it
+`auto_closed` without touching the day log, and says so in the response.
+
+Two open timers can no longer exist at all: `uq_session_open_one` is a UNIQUE key
+over a generated column that holds the user id only while a row is open, so a double
+tap is refused by MySQL rather than by a check that a race can slip past. To see
+what is open:
+
+```sql
+SELECT id, block, session_date, started_at, auto_closed
+  FROM study_sessions
+ WHERE user_id = 1 AND ended_at IS NULL;
+```
+
+If one is stuck and the API will not close it, closing it by hand is safe, because
+a zero minute session credits nothing:
+
+```sql
+UPDATE study_sessions
+   SET ended_at = started_at, minutes = 0, auto_closed = 1
+ WHERE id = ? AND user_id = 1 AND ended_at IS NULL;
+```

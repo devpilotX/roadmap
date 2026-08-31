@@ -6,7 +6,7 @@
 
 import Link from 'next/link';
 import { useResource } from '@/components/ui/useResource';
-import { Badge, ErrorCard, Meter, StatGrid , LoadingSections} from '@/components/ui/Basics';
+import { Badge, Callout, ErrorCard, Meter, StatGrid , LoadingSections} from '@/components/ui/Basics';
 import { int, phaseClass } from '@/lib/client/format';
 
 interface WeekProgress {
@@ -74,7 +74,13 @@ function WeekCard({ w }: { w: WeekRow }) {
 export function WeeksScreen() {
   const { data, error, loading } = useResource<Payload>('/api/weeks');
 
-  if (error) return <ErrorCard message={error} />;
+  // Only a first load that failed has nothing to show. useResource keeps the last
+  // good payload when a refetch fails, and this used to throw all 21 cards away on
+  // the strength of that error anyway: a moment offline replaced a finished grid
+  // with a red box. An error with data behind it is reported above the grid instead,
+  // because stale weeks are worth more than no weeks and the person still has to be
+  // told the number they are looking at is not fresh.
+  if (error && !data) return <ErrorCard message={error} />;
   if (loading || !data) {
     return (
       <LoadingSections
@@ -99,6 +105,15 @@ export function WeeksScreen() {
 
   return (
     <>
+      {error ? (
+        <section className="stack" aria-label="Refresh failure">
+          <Callout tone="orange" title="That did not refresh">
+            <p>{error}</p>
+            <p>Everything below is the last good answer the server gave.</p>
+          </Callout>
+        </section>
+      ) : null}
+
       <section className="stack" aria-label="Week summary">
         <StatGrid
           stats={[

@@ -287,7 +287,10 @@ export function DsaScreen() {
     { key: 'does_not_open', label: 'What it still does not open' },
   ];
 
-  const topicList = (
+  /* The 18 A2Z steps are seed data, so an empty list is not "you have not started
+   * yet", it is "the seed did not land". Saying which saves a hunt through the
+   * network tab for a request that succeeded and returned nothing. */
+  const topicList = s.topics.length ? (
     <div>
       {s.topics.map((t) => (
         <TopicBlock
@@ -298,6 +301,11 @@ export function DsaScreen() {
         />
       ))}
     </div>
+  ) : (
+    <p className="muted">
+      No steps are loaded. The 18 A2Z steps come from the seed, not from anything you do here, so an
+      empty list means the seed has not run against this account.
+    </p>
   );
 
   return (
@@ -461,11 +469,21 @@ export function DsaScreen() {
         ) : (
           <>
             <Section title={`Problems, ${problems.data.count} shown`}>
-              <div>
-                {problems.data.problems.map((p) => (
-                  <ProblemRow key={p.id} p={p} onSaved={reload} />
-                ))}
-              </div>
+              {problems.data.problems.length ? (
+                <div>
+                  {problems.data.problems.map((p) => (
+                    <ProblemRow key={p.id} p={p} onSaved={reload} />
+                  ))}
+                </div>
+              ) : (
+                /* Four filters can be on at once, so an empty list is nearly always
+                   the filters and not the import. It says so rather than looking
+                   like a screen that failed to draw. */
+                <p className="muted">
+                  No problem matches these filters. Clear the search, or widen the topic, difficulty
+                  and status above.
+                </p>
+              )}
             </Section>
             <Section title="The 18 A2Z steps">{topicList}</Section>
           </>

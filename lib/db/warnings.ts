@@ -9,6 +9,7 @@ import { one, query, run } from './pool';
 import { getCalendarDays, getGates, getWarningRules, getWeeks } from './reference';
 import { dsaSolvedTotal, streakState } from './progress';
 import { evaluateWarnings, type Warning, type WarningContext } from '../warnings';
+import { conflict, notFound } from '../errors';
 import { nowInTz, todayInTz } from '../dates';
 
 async function snoozedCodes(userId: number): Promise<Set<string>> {
@@ -171,13 +172,30 @@ export async function warningsFor(
   return { warnings: evaluateWarnings(ctx), context: ctx };
 }
 
-/** Snoozes an orange warning for 24 hours, once per day. */
+/**
+ * Snoozes an orange warning for 24 hours, once per day.
+ *
+ * Three outcomes, and they are not the same kind of failure, which is why only
+ * one of them comes back as a value.
+ *
+ * A code no warning rule defines is a request for something that is not there,
+ * so it is 404. A warning already snoozed today conflicts with state already
+ * recorded, so it is 409: nothing about the request is malformed, and repeating
+ * it will never succeed. Both used to leave here as an ok:false reason, which the
+ * route turned into 422, telling the client its input had failed validation when
+ * the input was perfectly valid. A caller could not tell a mistyped code from a
+ * second tap on the same button, and neither was what 422 means.
+ *
+ * Red means red stays a returned reason rather than a thrown error, because that
+ * one is a rule from final.md rather than an HTTP condition. The route renders it
+ * verbatim as a rule violation, which is exactly what it is.
+ */
 export async function snoozeWarning(
   userId: number,
   code: string
 ): Promise<{ ok: boolean; reason: string | null }> {
   const rule = (await getWarningRules()).find((r) => r.code === code);
-  if (!rule) return { ok: false, reason: 'No such warning.' };
+  if (!rule) throw notFound('No such warning.');
   if (rule.level !== 'orange' || Number(rule.is_permanent) === 1) {
     return { ok: false, reason: 'Red means red. This warning cannot be dismissed or snoozed.' };
   }
@@ -187,10 +205,7 @@ export async function snoozeWarning(
     [userId, code, today]
   );
   if (existing) {
-    return {
-      ok: false,
-      reason: 'That warning has already been snoozed once today. Once is the limit.',
-    };
+    throw conflict('That warning has already been snoozed once today. Once is the limit.');
   }
   await run(
     'INSERT INTO warning_snoozes (user_id, warning_code, snooze_date, snoozed_until) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))',

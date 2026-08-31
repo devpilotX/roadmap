@@ -52,10 +52,11 @@ the tests.
 
 ---
 
-## 3. `src/lib/exportTables.mjs`
+## 3. `lib/exportTables.ts`
 
 **What.** One list of exportable tables and one CSV writer, imported by
-`src/routes/api/meta.mjs` and by `scripts/export-all.mjs`.
+`app/api/export/all.json/route.ts`, `app/api/export/[name]/route.ts` and
+`scripts/export-all.mjs`.
 
 **Why.** The list existed twice, once in the API and once in the script. Two
 copies means a table can become exportable in the interface and stay invisible to
@@ -64,7 +65,7 @@ list and a test that asserts both callers produce identical CSV.
 
 **Serves.** Part 18.8, the export contract.
 
-**Remove it by.** Copying the map back into `meta.mjs`. The test in
+**Remove it by.** Copying the map back into each caller. The test in
 `tests/cli.test.mjs` that compares the two writers would go with it.
 
 ---
@@ -158,7 +159,8 @@ practically a puzzle.
 
 ## 9. `tests/`, using `node --test`
 
-**What.** 300+ tests across ten files, run by Node's own test runner.
+**What.** 518 tests across thirteen files, run by Node's own test runner through
+`tsx`.
 
 **Why.** Section 20 of the build prompt asks for the boundaries to be tested. The
 choices worth stating: no test framework was added, because Node 24 ships one and
@@ -166,10 +168,15 @@ this project has deliberately few dependencies; and the two tests that need
 infrastructure skip themselves cleanly rather than failing, so the suite is useful
 on a laptop with nothing running and thorough on a machine with everything up.
 
-`tests/http.test.mjs` runs against an already listening server instead of
-importing the app, because `src/server.mjs` starts on import and refactoring it to
-export the app was a larger change than the coverage justified. The consequence is
-that those tests are skipped when nothing is up, and the runbook says so.
+`tests/http.test.mjs` runs against an already listening server rather than
+importing the app, because a stranger's view of the running server is the thing
+worth testing: the redirects, the headers, the cookie flags and the CSRF refusals
+are produced by `middleware.ts` and by Next itself, and importing route handlers
+would skip every one of them. It also probes `/api/healthz` first and refuses to
+run against something that is listening but is not this application, so another
+project on port 3000 cannot produce a wall of false failures. The consequence is
+that its 60 tests skip when nothing is up, which is 60 of the 518. The runbook and
+`docs/QA-REPORT.md` both say so.
 
 **Serves.** Section 20 of the build prompt.
 
@@ -192,18 +199,25 @@ that those tests are skipped when nothing is up, and the runbook says so.
 
 ## 11. `tests/screens.test.mjs`
 
-**What.** 192 static assertions over the 24 client screen modules: that each one
-mounts only to ids its EJS view actually declares, fills every container the view
-left saying "Loading", calls only API paths the router registers, imports only
-helpers that are exported, never uses `innerHTML` or a style attribute, renders an
-`errorCard` on failure, and starts itself.
+**What.** Static checks over every screen under `app/(app)`: that every `/api/...`
+path a screen asks for resolves to a route file that exists and exports the method
+the screen uses, that every path in the sidebar, the bottom bar and the command
+palette resolves to a `page.tsx`, that no two route files claim the same URL, that
+no route file exports nothing, and that no screen still points at one of the four
+paths the rewrite removed.
 
-**Why.** Seventeen of the 24 screens were four line placeholders, so most pages
-showed nothing but "Loading". Once they were written, the failure modes that
-remained were all silent ones: a mount id that does not exist, an API path that
-was never registered, a helper that is not exported. None of those are caught by
-`node --check`, and each of them looks exactly like "the page is broken" to the
-person using it. This file catches all three without a browser.
+**Why.** TypeScript cannot see a string. `useResource('/api/tday')` typechecks
+perfectly and fails at runtime, and a sidebar entry pointing at a page nobody
+created compiles cleanly and 404s. Those are the two silent failures left once the
+screens are React components, and each of them looks exactly like "the page is
+broken" to the person using it. This file catches both without a browser, a server
+or a database.
+
+**What it used to be.** In the Express build each page was an EJS view full of
+empty containers plus one ES module that filled them, and this file checked that
+the module mounted only to ids the view actually declared and filled every
+container the view left saying "Loading". Those checks are gone because what they
+guarded is gone: a container that does not exist is now a compile error.
 
 **Serves.** Section 20 of the build prompt, and every screen in sections 12 to 14.
 
@@ -211,69 +225,91 @@ person using it. This file catches all three without a browser.
 
 ---
 
-## 12. `scripts/smoke-screens.mjs`
+## 12. `scripts/smoke.mjs`
 
-**What.** A harness that signs up a throwaway account, fetches each of the 23
-pages, parses the server rendered HTML, installs it as a real document, imports
-the real screen module so its own fetch calls hit the real API and the real
-database, then asserts every container ended up with content. It deletes the
-throwaway account when it is done, including on the failure path.
+**What.** A harness that signs in as a real account against a running server and
+then, in one pass: asserts that all 23 pages answer 200 carrying their own heading
+in the server rendered HTML, that all 34 read endpoints answer `{ ok: true }` with
+the top level keys their screen actually reads, that an unauthenticated request is
+refused rather than served, and that a state changing request with no CSRF token is
+refused. Every request is a GET apart from the sign in and the two refusal probes,
+so it writes nothing but the session row, which it deletes.
 
-**Why.** The static tests prove the wiring is consistent. They cannot prove a
-screen actually draws. This does, and it is the only check that exercises the
-whole path from MySQL through the API through the module into the DOM.
+**Why.** The static tests prove the wiring is consistent. They cannot prove the
+surface answers. This does, and it is the only check that exercises the whole path
+from MySQL through the route into the rendered page.
 
 **Serves.** Section 20 of the build prompt.
 
-**The dependency choice worth knowing.** It needs `linkedom` to have a DOM, and
-`linkedom` is deliberately **not** in `package.json`. Install it for the run only:
+**It replaced two harnesses, and could not carry either over.** The Express build
+had `scripts/smoke-screens.mjs`, which fetched a page's HTML, installed it into a
+`linkedom` document and imported the screen's own ES module so its `fetch` calls hit
+the real API; and `scripts/verify-screens-offline.mjs`, which rendered each EJS view
+and dispatched `fetch` straight into an Express router in process. A screen is a
+compiled React component now, so it cannot be imported into a fake document and made
+to hydrate, and there are no EJS views and no Express routers. Both files are
+deleted, and the header comment of `smoke.mjs` records the same reasoning.
+
+**What it deliberately does not check.** Whether a screen visibly *fills* its
+panels. The data arrives after hydration, so that needs a real browser; point
+Playwright at the same list when you want it. Nothing here needs `linkedom` or any
+other extra dependency.
 
 ```bash
-npm install linkedom --no-save
-node scripts/smoke-screens.mjs
+npm run smoke -- --email=you@example.com --password=...
+npx tsx scripts/smoke.mjs --only=money,stats
 ```
 
-Without it the script exits 2 and prints that line. The application itself never
-imports it, so nothing ships that is not needed.
+It signs in rather than signing up, so the account must already exist. With nothing
+listening it exits 2 and says so.
 
-**Remove it by.** Deleting the file.
+**Remove it by.** Deleting the file and the `smoke` entry in `package.json`.
 
 ---
 
-## 13. Five CSS classes moved into `components.css`
+## 13. Five CSS classes that belong to more than one screen
 
 **What.** `.milestone` and its parts, `.costheading`, `.pwwrap`, `.funnelbar` and
-`.videorow` moved out of individual screen stylesheets into `components.css`.
+`.videorow` live in `app/design.css`, the sheet of reusable component classes, not
+in `app/screens.css`, which holds only rules that belong to exactly one screen.
 
-**Why.** `views/partials/head.ejs` loads tokens, base, layout and components on
-every page, then exactly one `screens/NAME.css`. Each of those five classes was
-defined inside one screen's file and then used from another: the milestone list by
-`/ladder` and `/newzealand`, `costheading` by `/eligibility` and `/newzealand`,
-`pwwrap` by the auth pages and `/profile`, `funnelbar` by `/applications` and
-`/stats`, `videorow` by `/` and `/stats`. The second user of each got the markup
-with none of the styling.
+**Why.** In the Express build each page loaded exactly one screen stylesheet, and
+each of these five classes was defined inside one screen's file and then used from
+another: the milestone list by `/ladder` and `/newzealand`, `costheading` by
+`/eligibility` and `/newzealand`, `pwwrap` by the auth pages and `/profile`,
+`funnelbar` by `/applications` and `/stats`, `videorow` by `/` and `/stats`. The
+second user of each got the markup with none of the styling.
+
+**What changed with the rewrite.** `app/globals.css` imports `design.css` and
+`screens.css`, and `app/layout.tsx` imports `globals.css`, so every page now loads
+every rule and the original failure is structurally impossible. The split is kept
+anyway, because "is this class shared" is a question worth being able to answer by
+looking at which file it is in.
 
 **Serves.** Section 15 of the build prompt, the design system.
 
-**Remove it by.** Moving each block back, and accepting that the second page that
-uses it will be unstyled.
+**Remove it by.** Moving each block into `screens.css`. Nothing breaks; the
+distinction between shared and single-screen rules is what is lost.
 
 ---
 
-## 14. Today shows an error card on a failed first load
+## 14. A failed first load is a card, a failed refresh is a toast
 
-**What.** `public/js/screens/today.mjs` used to show a toast when `/api/today`
-failed. It now shows a toast only if the screen has already drawn once, and
-renders an `errorCard` into `#t-now` if the very first load fails.
+**What.** `useResource` in `components/ui/useResource.ts` carries an `error`
+message alongside the payload, and a screen with no data and an error renders
+`ErrorCard` from `components/ui/Basics.tsx` in place of the panel. A failure that
+happens after the screen has already drawn is a toast instead, through
+`toastError`, because the last good draw is still on screen.
 
-**Why.** A toast disappears. On a failed first load the whole of Today was left
-sitting on "Loading" with no explanation, on the one screen that gets opened 150
-times. A later refresh failing is genuinely a toast, because the last good draw is
-still on screen, so the two cases are treated differently rather than the same.
+**Why.** A toast disappears. On a failed first load the whole of Today used to be
+left sitting on "Loading" with no explanation, on the one screen that gets opened
+150 times. The two cases are genuinely different, so they are treated differently
+rather than the same.
 
 **Serves.** Section 12 of the build prompt.
 
-**Remove it by.** Reverting `refresh()` to a single `toastError`.
+**Remove it by.** Rendering the error as a toast in both cases. Every screen would
+then have a silent failure mode.
 
 ---
 
@@ -301,9 +337,10 @@ cap), W5 (Anki overdue), W7 (applications have not started) and W8 (a problem be
 you twice) still fire. If a problem has already beaten you twice, that is true
 whenever it happened.
 
-**Remove it by.** Deleting the `beforeStart` branch in `src/lib/streaks.mjs`, the
-`startedOn()` reader in `src/db/progress.mjs`, and the `notStarted` guards in
-`src/lib/warnings.mjs`. `tests/start-date.test.mjs` goes with them.
+**Remove it by.** Deleting the `beforeStart` branches in `lib/streaks.ts`, the
+`startedOn()` reader in `lib/db/progress.ts`, and the `notStarted` guards in
+`lib/warnings.ts`, which `lib/db/warnings.ts` feeds. `tests/start-date.test.mjs`
+goes with them.
 
 ---
 
@@ -332,7 +369,7 @@ read from an endpoint is the Appendix B lead column list, noted in a comment nam
 its source.
 
 **Remove it by.** Reverting `GET /api/roles` to the four-field version and dropping
-the five new sections from `views/screens/roles.ejs`.
+the five new sections from `app/(app)/roles/RolesScreen.tsx`.
 
 ---
 
@@ -366,52 +403,59 @@ when, `counts_to_target` actually changes.
 
 ---
 
-## 18. `tests/screens.test.mjs` grew a per-page CSS check
+## 18. Retired: the per-page CSS check
 
-**What.** Beyond checking that every class has a rule somewhere, the suite now
-checks that every class is in a stylesheet **the page that uses it actually
-loads**, and that no element stacks two flex containers.
+**What it was.** `tests/screens.test.mjs` used to check that every class was in a
+stylesheet **the page that uses it actually loads**, and that no element stacked two
+flex containers.
 
-**Why.** `head.ejs` loads tokens, base, layout and components on every page and
-then exactly one `screens/NAME.css`. A class defined in another screen's stylesheet
-renders with no styling at all, and nothing errors. This found seven such classes,
-and 14 places where `row between` only worked because of declaration order.
+**Why it existed.** `views/partials/head.ejs` loaded tokens, base, layout and
+components on every page and then exactly one `screens/NAME.css`. A class defined in
+another screen's stylesheet rendered with no styling at all, and nothing errored. It
+found seven such classes, and 14 places where `row between` only worked because of
+declaration order. Section 13 is the fix it produced.
 
-**Serves.** Section 15, the design system.
+**Why it is gone.** `app/globals.css` imports `design.css` and `screens.css`, and
+`app/layout.tsx` imports `globals.css`, so every page loads every rule. There is no
+per-page stylesheet to be on the wrong side of, and a check that can never fail is
+a check that teaches the reader something untrue about the build. The flex rule went
+with it: the classes it flagged were fixed, and Tailwind's own utilities are now the
+common case.
 
-**Remove it by.** Deleting the two `it` blocks.
+**Serves.** Section 15, the design system, historically.
 
 ---
 
-## 19. `scripts/verify-screens-offline.mjs`
+## 19. Retired: `scripts/verify-screens-offline.mjs`
 
-**What.** Renders every view with the same locals the page router supplies,
-installs it as a document, and stubs `fetch` so a call to `/api/...` is dispatched
-straight into the matching Express handler in process, against the real database.
-All 23 pages verified with nothing listening.
+**What it was.** A harness that rendered every EJS view with the same locals the
+page router supplied, installed it as a document, and stubbed `fetch` so a call to
+`/api/...` was dispatched straight into the matching Express handler in process,
+against the real database. It verified all 23 pages with nothing listening.
 
-**Why.** `scripts/smoke-screens.mjs` drives the real HTTP surface, which is the
-better test, but it needs a running server and a throwaway account, and signup is
-rate limited to five per quarter hour. This needs neither, writes nothing, and
-catches a missing view local that only a browser would otherwise reveal.
+**Why it existed.** The HTTP harness needed a running server and a throwaway
+account, and signup is rate limited. This needed neither and wrote nothing, and it
+caught a missing view local that only a browser would otherwise have revealed.
 
-**Serves.** Section 20.
-
-**The limit, stated.** Every request is a GET, so write paths are not exercised
-here. That is what `smoke-screens.mjs` is for. It also needs `linkedom`, installed
-with `--no-save`.
-
-**Remove it by.** Deleting the file.
+**Why it is gone.** There are no EJS views and no Express routers to dispatch into,
+so nothing it did can be pointed at the current code. Its whole purpose, catching a
+template variable that was never passed, is now a TypeScript error at build time.
+`scripts/smoke.mjs` in section 12 covers what is left, and needs a listening server
+to do it. The gap that leaves is stated in `docs/QA-REPORT.md` section 5 rather than
+papered over.
 
 ---
 
 ## 20. Signup closes itself after the first account
 
-**What.** `src/middleware/signup.mjs`. `GET /signup` and `POST /api/auth/signup`
+**What.** `lib/server/signup.ts`. `GET /signup` and `POST /api/auth/signup`
 are gated. With `ALLOW_SIGNUP` unset, signup is open only while the `users` table
-is empty, so the first run creates the account and the door shuts. After that both
-answer 403 `SIGNUP_CLOSED`, and `/login` stops offering the link. `ALLOW_SIGNUP=true`
-forces it open for recreating a lost account, `false` forces it shut.
+is empty, so the first run creates the account and the door shuts. After that
+`POST /api/auth/signup` answers 403 `SIGNUP_CLOSED` and `/signup` answers **200
+with a page that says account creation is closed**, because a page a person
+navigated to should explain itself rather than hand them a bare status code.
+`/login` stops offering the link. `ALLOW_SIGNUP=true` forces it open for recreating
+a lost account, `false` forces it shut.
 
 **Why.** This was found in the pre-deployment audit and it was the one genuine
 blocker. `requireAnon` only keeps an already signed in visitor away from /signup; it
@@ -425,35 +469,103 @@ application rests on.
 **The policy is a pure function.** `decide(allowSignup, userCount)` takes both
 facts as arguments rather than reading them, because a policy you cannot test
 without setting environment variables is a policy nobody tests. It is covered by 13
-assertions in `tests/signup-gate.test.mjs`, including that an unreadable user count
+tests in `tests/signup-gate.test.mjs`, including that an unreadable user count
 **fails closed**. A door that opens when the database hiccups is not a door.
 
-**Remove it by.** Dropping `requireSignupOpen` from the two routes. Do not, on
-anything reachable from the internet.
+**Remove it by.** Dropping `assertSignupOpen` from `app/api/auth/signup/route.ts`
+and the `signupState()` check from `app/signup/page.tsx`. Do not, on anything
+reachable from the internet.
 
 ---
 
-## 21. `express-rate-limit` moved from 8.1.0 to 8.6.2
+## 21. Rate limiting is written here, not taken from a package
 
-**What.** A pinned dependency was deliberately upgraded.
+**What.** `lib/server/rateLimit.ts` holds the login, signup, GitHub sync and general
+API limits. No rate limiting package is installed. `express-rate-limit` was a
+dependency of the Express build and went with it, along with `express` and `ejs`;
+none of the three appears in `package-lock.json` now.
 
-**Why.** `npm audit` reported two high severity advisories in `ip-address` 10.0.1,
-which 8.1.0 pulls in. One of them has `Address4` decode a leading-zero octet as
-decimal where a resolver decodes it as octal, which is a trust boundary bypass.
-This was not theoretical here: `src/middleware/rateLimit.mjs` calls
-`ipKeyGenerator(req.ip)` on every login, signup and API request, so with
-`TRUST_PROXY=1` a crafted `X-Forwarded-For` could vary the rate limit key and
-weaken login throttling. 8.6.2 resolves `ip-address` to 10.5.0 and `npm audit`
-reports **0 vulnerabilities**.
+**Why.** Two reasons, in this order. The rewrite left nothing for it to plug into:
+`express-rate-limit` is Express middleware, and there is no Express. And it had been
+the source of the only real `npm audit` finding this project ever had. Version 8.1.0
+pulled in `ip-address` 10.0.1, where `Address4` decodes a leading-zero octet as
+decimal while a resolver decodes it as octal, and the login path called
+`ipKeyGenerator(req.ip)` on every attempt, so with `TRUST_PROXY=1` a crafted
+`X-Forwarded-For` could vary the rate limit key and weaken login throttling. That
+was pinned around at the time by moving to 8.6.2; removing the package removed the
+chain entirely, and `npm audit --omit=dev` reports **0 vulnerabilities**.
+
+**Nothing about the limits changed.** Five login or signup attempts per fifteen
+minutes, per address and per email, from section 5.3; six GitHub syncs per five
+minutes, which is not configurable; and a wide per minute ceiling on everything
+else, 300 in production. The counters live in process memory, which is exactly where
+`express-rate-limit` kept them, so a restart still clears them and two instances
+behind one proxy would still double the effective limit.
+`tests/security.test.mjs` pins the defaults so they cannot drift quietly.
 
 **Serves.** Section 5.3, the login and signup rate limits.
 
 **The related deployment note.** `TRUST_PROXY=1` only makes sense when the proxy
 *overwrites* `X-Forwarded-For`. `docs/RUNBOOK.md` section 12.2 gives the nginx
-lines, because `$proxy_add_x_forwarded_for` appends and would hand the attacker the
-same bypass back.
+lines, because `$proxy_add_x_forwarded_for` appends and would hand a caller the same
+bypass back. Where Next does not expose a client address at all, `clientIp` returns
+the literal `local` and every caller shares one bucket, which limits more rather
+than less.
 
-**Do not pin it back.**
+**Remove it by.** Nothing to remove. Deleting the limiters would leave the login
+form unthrottled; do not.
+
+---
+
+## 22. `migrations/005_hardening.sql` and `tests/triggers.test.mjs`
+
+**What.** A migration of six corrections plus two missing indexes, and a test file
+that pins the most consequential of them. `001_init.sql` was deliberately not
+edited: `scripts/migrate.mjs` records the SHA-256 of every migration and treats a
+changed file as a hard stop, so a fresh install reaches the same final state by
+applying 001 then 005.
+
+**Why.** Each one either breaks the running application or corrupts data, and none
+of them was visible in use. The two worth knowing here, because they change
+behaviour a person can observe:
+
+- `trg_day_logs_no_backdate_upd` rejected **every** update to a `day_logs` row older
+  than seven days. Part 18.7 rule 3 forbids a person editing such a day; it does not
+  forbid the application recomputing a projection of it. `recomputeRange()` walks all
+  150 days on a GitHub sync, a repository edit or a start date change, so from the
+  eighth day of real use each of those would have raised SQLSTATE 45000 and surfaced
+  as a 500. The trigger now fires only when a column a person enters actually
+  changes, compared with the null safe `<=>` so a change to NULL cannot slip past.
+- A study session left open on an earlier date is closed automatically, with
+  `auto_closed = 1` and zero minutes, rather than blocking every future session. The
+  old rule was right for a session started today and a dead end for one left running
+  last Tuesday, because the only route out credited its minutes to a date the seven
+  day rule had sealed, which failed and rolled back, leaving it open. A session open
+  from **today** still refuses, which is the behaviour that was actually wanted.
+
+The other four: `sessions` gains a `user_id`, so "sign out everywhere" is no longer
+a `LIKE` on the session JSON that also matches users 120, 123 and 1234; anonymous
+session rows get two hours instead of thirty days and the backlog is cleared; a
+UNIQUE key over a generated column allows only one open session per person, so a
+double tap is refused by MySQL rather than by a check a race can slip past; and
+`github_pushes` is keyed on `(user_id, repo_id, push_date)`, so a day whose head
+commit changes between syncs cannot be counted twice. `audit_log` now survives the
+deletion of the user it audits.
+
+**Serves.** Part 18.7 rule 3, Part 18.4, and Part 17.1.
+
+**How the test tests what it claims to.** An aged `day_logs` row cannot be created,
+because the INSERT trigger correctly forbids exactly that. So the suite builds a
+probe table with `CREATE TABLE … LIKE day_logs`, which copies the columns and no
+triggers, ages a row inside it, and attaches the trigger body **read verbatim out of
+`migrations/005_hardening.sql`** with only the names rewritten. The predicate under
+test is therefore the shipped predicate rather than a paraphrase of it. Seven tests,
+all passing. The probe table is dropped in a `finally`, including on the failure
+path.
+
+**Remove it by.** You cannot, usefully: the migration is applied and its SHA is
+recorded. A later migration would have to reverse the individual statements, and
+reversing the first one reinstates a 500 on every GitHub sync after day eight.
 
 ---
 
@@ -489,9 +601,9 @@ role without the qualifier upgrades it. A full mention is never downgraded.
 links found, unless `--fail-on-dead` is passed. A dead link is a fact to act on in
 the morning, not a broken cron job.
 
-**A screen never stays on "Loading".** Every module wraps its work in a try/catch
-and puts an `errorCard` in the first container on failure. A page that cannot load
-says why. This is asserted for all 24 screens in `tests/screens.test.mjs`.
+**A screen never stays on "Loading".** `useResource` returns an `error` string
+alongside the payload, and a screen with no data and an error renders `ErrorCard`
+rather than the loading state. A page that cannot load says why.
 
 **The review screen does not pretend to save.** There is no endpoint that stores a
 written review answer, so rather than a save button that quietly does nothing, the
@@ -499,8 +611,8 @@ screen states plainly that the text is not sent anywhere and offers to copy the
 whole review out for `log.md`.
 
 **The four exits live on `/eligibility`, not on `/after`.** `GET /api/after`
-returns no exit data; `GET /api/eligibility` does, and `exitcard` is defined in
-`eligibility.css`. Putting them on `/after` would have meant inventing fields.
+returns no exit data; `GET /api/eligibility` does, and `.exitcard` is defined in
+`app/screens.css`. Putting them on `/after` would have meant inventing fields.
 
 **Two exits carry a cost note, not four.** The seed has `before_gate3 = 1` on
 exits 1 and 2 only. The screen counts the costly exits from the data rather than
@@ -508,7 +620,8 @@ asserting a number.
 
 **Reference renders Markdown as source, not as HTML.** `GET /api/doc/:slug`
 returns `body_md`, which is Markdown, and there is no client side renderer. It goes
-into a `<pre>` through `textContent`, and the panel says so, because the
-alternative was either shipping a Markdown parser to the browser or injecting HTML
-that `el()` and the CSP both refuse.
+into a `<pre>` as a text child, so React escapes it, because the alternative was
+either shipping a Markdown parser to the browser or reaching for
+`dangerouslySetInnerHTML`, which appears nowhere in this codebase and which the CSP
+is there to make pointless anyway.
 

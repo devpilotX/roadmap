@@ -6,7 +6,7 @@
  * exactly the moment you want to check before committing.
  */
 
-import { one, run, type SqlParam } from '@/lib/db/pool';
+import { transaction, type SqlParam } from '@/lib/db/pool';
 import { badRequest } from '@/lib/errors';
 import { authedRoute, jsonOk } from '@/lib/server/route';
 import { LEAD_STATUSES } from '@/lib/server/schemas';
@@ -169,23 +169,30 @@ export const POST = authedRoute(async ({ request, user }) => {
     });
   }
 
-  for (const values of toWrite) {
-    const existing = await one(
-      'SELECT id FROM leads WHERE user_id = ? AND name = ? AND is_deleted = 0',
-      [values[0], values[1]]
-    );
-    if (existing) {
-      report.skipped += 1;
-      report.problems.push(`"${values[1]}" is already on the list.`);
-      continue;
+  // One transaction for the whole file. A 2 MB paste is a few thousand rows and
+  // two queries each, and a failure partway through used to commit every row
+  // before the failing one: the person was told the import broke while half of
+  // it was already on the list, with nothing in the report saying which half. An
+  // import is one action in the user's head, so it is one action in the database.
+  await transaction(async (tx) => {
+    for (const values of toWrite) {
+      const existing = await tx.one(
+        'SELECT id FROM leads WHERE user_id = ? AND name = ? AND is_deleted = 0',
+        [values[0], values[1]]
+      );
+      if (existing) {
+        report.skipped += 1;
+        report.problems.push(`"${values[1]}" is already on the list.`);
+        continue;
+      }
+      await tx.run(
+        `INSERT INTO leads (user_id, name, category, area, phone, website, mobile_broken, rating, reviews, status, last_touch_on, next_touch_on, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        values
+      );
+      report.written += 1;
     }
-    await run(
-      `INSERT INTO leads (user_id, name, category, area, phone, website, mobile_broken, rating, reviews, status, last_touch_on, next_touch_on, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      values
-    );
-    report.written += 1;
-  }
+  });
 
   return jsonOk({ ...report, dry_run: false }, 201);
 });

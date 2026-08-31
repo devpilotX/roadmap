@@ -57,11 +57,24 @@ export interface CommandPaletteProps {
   onClose: () => void;
 }
 
+/**
+ * Everything inside `root` that a keyboard can land on. Mirrors the helper in
+ * components/AccountMenu.tsx, which is the reference for this pattern.
+ */
+function focusables(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], select, input, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null);
+}
+
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const router = useRouter();
   const [term, setTerm] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => matches(term), [term]);
 
@@ -75,7 +88,29 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      // Tab is held inside the panel. This is an aria-modal dialog rendered last in
+      // the tree, so without this the first Tab drops into the page behind it, and
+      // the page behind it is the one the dialog is covering.
+      if (e.key !== 'Tab') return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = focusables(panel);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -85,6 +120,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     onClose();
     router.push(href);
   }
+
+  /* The row the arrow keys are on, named so the combobox can point at it. */
+  const activeId = results[index] ? `palette-opt-${index}` : undefined;
 
   return (
     <div
@@ -97,15 +135,29 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal__panel">
+      <div className="modal__panel" ref={panelRef}>
         <label className="visually-hidden" id="palette-label" htmlFor="palette-input">
           Search screens and jump
         </label>
+        {/*
+          A combobox that owns a listbox, which is what this always was and what it
+          now says it is. It used to be a bare role="listbox" holding `<li>` wrappers
+          around role="option" anchors: an option may not be the child of anything
+          but its own listbox or a group inside it, nothing tied the input to the
+          list, and nothing told an assistive technology which row the arrow keys had
+          reached. aria-activedescendant is that last part, and it is why focus is
+          allowed to stay in the input while the highlight moves.
+        */}
         <input
           ref={inputRef}
           className="input"
           id="palette-input"
           type="search"
+          role="combobox"
+          aria-expanded={results.length > 0}
+          aria-controls="palette-results"
+          aria-activedescendant={activeId}
+          aria-autocomplete="list"
           placeholder="Jump to a screen, a week, or a date"
           autoComplete="off"
           spellCheck={false}
@@ -129,24 +181,35 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           }}
         />
 
-        <ul className="kancol__list" id="palette-results" role="listbox" aria-labelledby="palette-label">
-          {results.map(([label, href], i) => (
-            <li key={href}>
-              <a
-                className={`kancard${i === index ? ' is-active' : ''}`}
-                href={href}
+        {results.length ? (
+          /*
+            The rows are the `<li>` themselves, not anchors inside them, because an
+            option may not contain anything focusable. That costs a middle click into
+            a new tab; every other way in still works, Enter on the highlighted row
+            or a click on any row, and both already went through router.push.
+          */
+          <ul className="kancol__list" id="palette-results" role="listbox" aria-label="Matches">
+            {results.map(([label, href], i) => (
+              <li
+                key={href}
+                id={`palette-opt-${i}`}
                 role="option"
                 aria-selected={i === index}
-                onClick={(e) => {
-                  e.preventDefault();
-                  go(href);
-                }}
+                className={`kancard${i === index ? ' is-active' : ''}`}
+                onClick={() => go(href)}
               >
                 {label}
-              </a>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          /* Said out loud, because a palette that silently shows nothing looks
+             broken rather than empty. */
+          <p className="muted" id="palette-results">
+            Nothing matches that. Try a week number from 1 to 21, a date like 2026-10-04, or part of
+            a screen name.
+          </p>
+        )}
 
         <p className="text-xs muted">
           <kbd>Ctrl</kbd> <kbd>K</kbd> opens this. <kbd>Esc</kbd> closes it. Type a week number, a

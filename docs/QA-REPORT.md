@@ -1,10 +1,16 @@
-﻿# QA-REPORT.md
+# QA-REPORT.md
 
 What was actually run, and what it returned. Every number here is copied from a
-command whose output was read, not from an intention.
+command whose output was read, or from a file this report names so it can be
+checked without trusting the report.
 
-Generated 28 August 2026. Environment: Windows, Node 24.19.0, MySQL 8.4.9 on
+Generated 31 August 2026. Environment: Windows, Node 24.19.0, MySQL 8 on
 127.0.0.1:3399, database `roadmap_tracker`.
+
+The application was rewritten from Express to Next.js 15 App Router in commit
+`c61b32e`. Two checks earlier versions of this report carried cannot be performed
+any more, because the software they tested no longer exists. They are recorded as
+retired in sections 4 and 6 rather than quietly dropped.
 
 ---
 
@@ -16,14 +22,13 @@ npm test
 
 | Measure | Result |
 | --- | --- |
-| Tests | **604** |
+| Tests | **518** |
 | Suites | 83 |
-| Pass | **604** |
+| Pass | **458** |
 | Fail | **0** |
-| Skipped | 0 |
-| Duration | ~0.6 s |
+| Skipped | **60** |
 
-Node's own test runner, no framework dependency. The files:
+Node's own test runner through `tsx`, no framework dependency. Thirteen files:
 
 | File | What it defends |
 | --- | --- |
@@ -34,31 +39,64 @@ Node's own test runner, no framework dependency. The files:
 | `eligibility.test.mjs` | Part 19, including that eligible is not advised |
 | `start-date.test.mjs` | The per person start date, and that nothing changes when it is not moved |
 | `cli.test.mjs` | The CSV reader and writer, the argument parser, the export table list |
-| `security.test.mjs` | Argon2 parameters, password rules, markdown escaping, the ICS writer |
-| `screens.test.mjs` | The 24 client screens: mount ids, API paths, imports, CSP rules, CSS availability |
+| `security.test.mjs` | Argon2 parameters, password rules, markdown escaping, the ICS writer, the cookie and session rules, `safeNextPath`, the body limit, the rate limit defaults |
+| `screens.test.mjs` | Every API path a screen asks for resolves to a route that exports that method, and every navigable path resolves to a page |
 | `db.test.mjs` | The Appendix E row counts, against the live database |
-| `http.test.mjs` | The HTTP surface, against a running server |
+| `signup-gate.test.mjs` | `decide(allowSignup, userCount)`, including that an unreadable user count fails closed |
+| `triggers.test.mjs` | The `day_logs` retroactive triggers as migration 005 ships them |
+| `http.test.mjs` | The HTTP surface, against a server that is already listening |
 
-`db.test.mjs` and `http.test.mjs` skip themselves when MySQL or the server is not
-up. Both ran with their infrastructure present for this report, so nothing was
-skipped.
+### The 60 skipped tests, and exactly why
+
+All 60 are the whole of `tests/http.test.mjs`. That file probes
+`/api/healthz` before anything else and skips every one of its tests when nothing
+on `PUBLIC_ORIGIN` answers as this application. It is written that way on purpose:
+it tests a running server rather than an imported app, and a suite that fails
+because no server is up would be noise on a laptop.
+
+No server was started for this report, so the whole file skipped. The 60 come out
+of the file as:
+
+| Group in `http.test.mjs` | Tests |
+| --- | --- |
+| Each of the 23 page routes redirects to `/login` without a session | 23 |
+| Each of 17 sampled API routes answers 401 with a JSON `UNAUTHORISED` body | 17 |
+| The 401 body leaks no row of data and is under 500 bytes | 1 |
+| The pages a stranger is allowed to see: `/login`, `/signup`, `/api/healthz`, a 404, `robots.txt` | 5 |
+| Static assets served from the same origin: `/sw.js`, the manifest, two icons | 4 |
+| The security headers: CSP, framing and sniffing, permissions policy, session cookie, no `x-powered-by` | 5 |
+| CSRF protection: login, signup, a data write, and that a plain GET is not refused | 4 |
+| `/api/calendar.ics` needs a session like everything else | 1 |
+| **Total** | **60** |
+
+`458 + 60 = 518`. Nothing failed, and nothing else skipped.
+
+`tests/db.test.mjs` also skips itself when MySQL is unreachable. MySQL was up, so
+it ran, and its Appendix E assertions are section 2.
+
+**The HTTP surface is verified against a deployed origin instead**, not against
+this laptop: `npm run smoke` drives every page and every read endpoint against a
+running server, and section 12.4 of `docs/RUNBOOK.md` is the same set of checks as
+`curl` against the live domain. Section 5 states what that covers and what it does
+not.
 
 ---
 
 ## 2. The seed contract
 
 ```
-node scripts/verify-seed.mjs
+npm run verify
 ```
 
 ```
 SEED VERIFIED. 70 assertions passed, 0 failed.
 ```
 
-Every count in Appendix E of `final.md` matches what the parser extracted. The
-contract is read from the document at run time, never hardcoded.
+Exit code 0. Every count in Appendix E of `final.md` matches what the parser
+extracted. The contract is read from the document at run time, never hardcoded.
 
-Spot checks confirmed directly against the database:
+The same counts are asserted against the live database by `tests/db.test.mjs`,
+which ran in section 1:
 
 | Table | Expected | Actual |
 | --- | --- | --- |
@@ -82,194 +120,200 @@ sums to 415 over the study days, 6 over the launch days, 0 over the Sundays and
 
 ---
 
-## 3. Every screen, against the real database
+## 3. It compiles, and the production tree is clean
 
-```
-npm install linkedom --no-save
-node scripts/smoke-screens.mjs
-```
-
-The harness signs up a throwaway account, fetches each page's server rendered
-HTML, installs it as a real document, imports the real screen module so its own
-`fetch` calls hit the real API and MySQL, then asserts every container that said
-"Loading" no longer does. It deletes the account afterwards, including on the
-failure path.
-
-```
-23 of 23 screens filled every container.
-throwaway account deleted: confirmed gone
-orphaned profile rows: 0
-```
-
-| Page | Containers filled | Rendered |
+| Command | Exit | Output |
 | --- | --- | --- |
-| `/` | 7 of 7 | 1,918 chars |
-| `/calendar` | 3 of 3 | 1,976 |
-| `/weeks` | 2 of 2 | 2,345 |
-| `/weeks/1` | 2 of 2 | 3,338 |
-| `/dsa` | 5 of 5 | 4,436 |
-| `/library` | 3 of 3 | 17,865 |
-| `/projects` | 2 of 2 | 3,597 |
-| `/gates` | 2 of 2 | 2,412 |
-| `/sundays` | 2 of 2 | 5,096 |
-| `/pushes` | 5 of 5 | 4,797 |
-| `/money` | 10 of 10 | 17,940 |
-| `/applications` | 5 of 5 | 3,005 |
-| `/ladder` | 4 of 4 | 3,435 |
-| `/roles` | 3 of 3 | 7,014 |
-| `/eligibility` | 8 of 8 | 10,956 |
-| `/after` | 4 of 4 | 4,485 |
-| `/newzealand` | 8 of 8 | 8,997 |
-| `/everything` | 4 of 4 | 93,097 |
-| `/stats` | 8 of 8 | 3,278 |
-| `/profile` | 5 of 5 | 4,050 |
-| `/review` | 2 of 2 | 2,961 |
-| `/reference` | 2 of 2 | 27,186 |
-| `/print/week` | 2 of 2 | 5,238 |
+| `npm run typecheck` | 0 | `tsc --noEmit`, strict, no errors |
+| `npm run build` | 0 | the production build completes |
+| `npm audit --omit=dev` | 0 | `found 0 vulnerabilities` |
 
-Those figures were taken before the Roles page was extended with where to apply,
-interview preparation, the resume stages and the unlock ladder, so `/roles` is now
-substantially larger than 7,014 characters.
+`express`, `express-rate-limit`, `ejs` and `ip-address` appear nowhere in
+`package-lock.json`. Rate limiting is `lib/server/rateLimit.ts`, written in the
+project rather than taken from a package, which is why the advisory chain that
+used to need managing here has gone rather than been pinned.
 
 ---
 
-## 4. The HTTP surface, unauthenticated
-
-55 assertions in `http.test.mjs`, all passing.
-
-| Check | Result |
-| --- | --- |
-| All 23 page routes without a session | **302 to `/login`** |
-| 14 sampled API routes without a session | **401**, JSON, code `UNAUTHORISED` |
-| The 401 body | Leaks no row of data, under 500 bytes |
-| `/login` and `/signup` | 200, `text/html` |
-| An unknown route | 404 |
-| `POST /api/auth/login` with no CSRF token | **403**, code `FORBIDDEN` |
-| `POST /api/auth/signup` with no CSRF token | **403** |
-| `x-powered-by` | Absent |
-| `X-Frame-Options` | `DENY` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| CSP | `default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, no `unsafe-inline` on script, no `unsafe-eval` |
-| Permissions-Policy | camera, geolocation, microphone, payment and usb all `()` |
-| Session cookie | `HttpOnly`, `SameSite=Lax`, `Path=/` |
-| `/api/calendar.ics` | 401 |
-
-Static assets: 24 screen modules, 23 screen stylesheets and 12 shared assets all
-served 200 with the correct content type. Zero bad.
-
----
-
-## 5. The operational scripts
-
-Each was run and its exit code read.
-
-| Script | Command | Exit | Result |
-| --- | --- | --- | --- |
-| Seed verifier | `node scripts/verify-seed.mjs` | 0 | 70 assertions passed |
-| Link checker | `node scripts/check-links.mjs --dry-run --limit=4` | 0 | 4 urls probed, all 200, 2 redirects followed, nothing written |
-| GitHub sync | `node scripts/sync-github.mjs --dry-run` | 0 | 1 user, anonymous mode reported with its 60 an hour cost, no username so skipped |
-| Export | `node scripts/export-all.mjs --zip` | 0 | 48 files, 778 rows, 371.1 KB, plus `MANIFEST.txt` and a 94.7 KB zip |
-| Digest | `node scripts/weekly-digest.mjs --week=1` | 0 | Week 1 rendered as Markdown |
-| Backup | `node scripts/backup.mjs` | 0 | 179.0 KB gzip, verified readable, **118 tables**, `Dump completed` marker present |
-| DSA import | `node scripts/import-dsa.mjs` | 1 | Correct: with no CSV it prints the column mapping and the 18 steps, then exits 1 |
-| Backup shell | `bash -n scripts/backup.sh` | 0 | Syntax clean |
-
-`backup_log` was checked directly afterwards and holds both rows:
+## 4. The screens against the API
 
 ```
-2026-08-28 06:48:19  export  export-2026-08-28-011817-...zip  380010  ok  48 files, 778 rows
-2026-08-28 06:53:06  dump    roadmap_tracker-2026-08-28-0653.sql.gz  183303  ok  118 tables, 92 inserts
+npm test          # tests/screens.test.mjs, part of the 518
 ```
 
-### The DSA importer, tested against a hostile CSV
-
-A synthetic Striver export was fed in, containing a quoted field with a comma and
-a row claiming step 99. The importer:
-
-- mapped all five columns by alias, and listed the two it ignored
-- parsed `"Frog Jump, with K distances"` intact
-- **rejected step 99** and said why: a nineteenth step would be an invention
-- **refused to write**, because 5 problems is not 474, and named the flag that
-  would override it
-
----
-
-## 6. Client code rules
-
-Enforced by 242 assertions in `screens.test.mjs`, all passing, for all 24 screens:
+TypeScript cannot see a string. `useResource('/api/tday')` typechecks perfectly
+and fails at runtime, and so does a sidebar entry pointing at a page nobody
+created. Those are the two silent failures left once the screens are React
+components, and they are what this file catches, statically, with no browser, no
+server and no database:
 
 | Rule | Why it is checked |
 | --- | --- |
-| No placeholder stubs | 17 screens were four line stubs; the pages showed only "Loading" |
-| Mounts only to ids its view declares | A wrong id leaves a panel on "Loading" forever |
-| Fills every container the view leaves on "Loading" | Same failure, from the other direction |
-| Calls only API paths the router registers | A wrong path shows an error card instead of data |
-| Imports only helpers that are exported | A blank page with a console error |
-| No `innerHTML`, no `html:` to `el()`, no style attribute | `el()` throws, and the CSP forbids inline style |
-| Renders an `errorCard` on failure | A screen must never fail silently |
-| Starts itself at the top level | Otherwise it defines its work and never does it |
-| Every class it uses has a rule | A class with no rule is invisible: right markup, wrong layout |
-| **Every class is in a stylesheet that page loads** | `head.ejs` loads one screen stylesheet; a class from another screen is unstyled |
-| No two flex containers on one element | The winner would depend on stylesheet order |
+| Every `/api/...` path a screen asks for matches a route file that exists | A wrong path is an error card instead of data |
+| That route exports the method the screen uses | A right path with a missing `POST` is a 405 |
+| No two route files claim the same URL | The winner would be an accident of the build |
+| Every route file exports at least one method | A 405 waiting to happen |
+| Every path in the sidebar, the bottom bar and the command palette resolves to a `page.tsx` | A dead link in the shell |
+| No screen still points at an endpoint the rewrite removed | The rewrite dropped four paths; a leftover caller would 404 |
 
-The last two caught eight real defects: `.milestone`, `.costheading`, `.pwwrap`,
-`.funnelbar`, `.videorow`, `.bigrow` and `.linklist` were each defined inside one
-screen's stylesheet and used from another, and `row between` appeared 14 times
-where the gap only resolved correctly by accident of declaration order. All are
-fixed; the shared classes now live in `components.css`.
+Counted on disk: 23 `page.tsx` files under `app/(app)` and 75 `route.ts` files
+under `app/api`.
+
+**Retired check: per page "containers filled".** Earlier reports listed all 23
+pages with a count of filled containers and a rendered character count, produced by
+`scripts/smoke-screens.mjs`. That harness fetched a page's server rendered HTML,
+installed it into a fake document and imported the screen's own ES module so its
+`fetch` calls hit the real API. It cannot be carried over and has been deleted: a
+screen is a compiled React component now, and it cannot be imported into a fake
+document and made to hydrate. **No equivalent figure is reported here**, because
+producing one needs a real browser. `scripts/smoke.mjs` replaced it with what can
+be checked without one — see section 5 — and its header comment records the same
+reasoning.
+
+---
+
+## 5. The HTTP surface
+
+**Not exercised for this report.** No server was started, so the 60 tests in
+`tests/http.test.mjs` skipped, as section 1 states.
+
+What verifies it instead, and what each one covers:
+
+| Check | Needs | What it asserts |
+| --- | --- | --- |
+| `npm test` with a server listening | `npm run build; npm start` in another terminal | The 60 tests above: every page redirects when anonymous, every sampled API route is 401, the headers, the cookie flags, the CSRF refusals, the ICS route |
+| `npm run smoke -- --email=... --password=...` | A running or deployed origin and a real account | Signs in, then all 23 pages answer 200 carrying their own heading, all 34 read endpoints return `{ ok: true }` with the top level keys their screen reads, an anonymous request is refused, and a write with no CSRF token is refused |
+| `docs/RUNBOOK.md` section 12.4 | The live domain | HSTS and `Secure` on the cookie, `Disallow: /`, `/signup` saying account creation is closed once the account exists, 302 from `/`, `UNAUTHORISED` from `/api/today`, no `x-powered-by` |
+
+`npm run smoke` signs in as an existing account rather than creating one, so it
+writes nothing but the session row, which it deletes. It does **not** assert that a
+screen fills its panels: the data arrives after hydration, so that needs a real
+browser.
+
+---
+
+## 6. The operational scripts
+
+Every script under `scripts/` imports the TypeScript modules in `lib/`, so each one
+runs through `tsx`. `node scripts/NAME.mjs` fails with `ERR_MODULE_NOT_FOUND`.
+`scripts/seed-from-md.mjs` is the single exception, importing only `.mjs`, which is
+why `npm run parse` calls plain `node`.
+
+| Script | Command |
+| --- | --- |
+| Seed verifier | `npm run verify`, or `npx tsx scripts/verify-seed.mjs` |
+| Migrator | `npm run migrate`, or `npx tsx scripts/migrate.mjs --status` |
+| Link checker | `npx tsx scripts/check-links.mjs --dry-run --limit=4` |
+| GitHub sync | `npx tsx scripts/sync-github.mjs --dry-run` |
+| Export | `npx tsx scripts/export-all.mjs --zip` |
+| Digest | `npx tsx scripts/weekly-digest.mjs --week=1` |
+| Backup | `npm run backup`, or `bash scripts/backup.sh` |
+| DSA import | `npx tsx scripts/import-dsa.mjs export.csv` |
+| Password reset | `npx tsx scripts/reset-password.mjs --email=... --password=...` |
+
+Section 2 is the one of these that was run for this report. The rest were last run
+on 28 August 2026, **before** the scripts were ported to import `lib/*.ts`, so
+their exit codes are not asserted for the current code. What can be checked today
+is the output they left on disk:
+
+| Artefact | On disk | What it shows |
+| --- | --- | --- |
+| `backups/export-2026-08-28-011817-…/` | 48 files plus `MANIFEST.txt`, 374.8 KB | The row counts in `MANIFEST.txt` sum to **778** |
+| `backups/export-2026-08-28-011817-….zip` | 97,022 bytes (94.7 KB) | The same export, zipped |
+| `backups/roadmap_tracker-2026-08-28-0653.sql.gz` | 183,303 bytes (179.0 KB) | A gzip dump, which `001_init.sql`'s 118 `CREATE TABLE` statements match |
+| `backups/digest.md` | 3,717 bytes | A week rendered as Markdown |
+| `backups/pw-2-….json` | present | `reset-password.mjs` saved the old hash before replacing it |
+
+Re-run them with the commands above to produce fresh evidence. `import-dsa.mjs`
+with no CSV exits 1 by design, printing the column mapping and the 18 steps.
+
+**Retired check: the offline screen harness.** `scripts/verify-screens-offline.mjs`
+rendered every EJS view and dispatched `fetch` straight into an Express router in
+process. There are no EJS views and no Express routers, and the file has been
+deleted. Nothing replaces it: what it caught, a missing view local, is now a
+compile error.
 
 ---
 
 ## 7. Coverage audit
 
-Two questions were asked of the codebase directly.
+Two questions asked of the codebase directly.
 
-**Does any API route have no interface?** 82 routes. Eight looked unreferenced;
-three were false positives from the auth prefix. The other five were real and are
-now built: lead CSV import, add and reclassify a repository, and manual session
-entry.
+**Does any endpoint have no interface?** 75 `route.ts` files under `app/api`. An
+audit found five working endpoints that no screen called, and all five now have
+one: lead CSV import on `/money`, add and reclassify a repository on `/pushes`,
+manual session entry in the `/calendar` day drawer, and `GET /api/ops` on
+`/profile`.
 
-**Is any table never read?** 118 tables. Five were never named in a server module:
-`app_meta` and `migrations_applied` are infrastructure, and `link_check_runs`,
-`backup_log` and `dsa_imports` were written by the scripts and read by nothing.
-`GET /api/ops` now reads all three and `/profile` shows them, so "when was the last
-backup" has an answer that comes from the row the script wrote.
+**Is any table never read?** `001_init.sql` creates 118 tables. Five were never
+named in a server module: `app_meta` and `migrations_applied` are infrastructure,
+and `link_check_runs`, `backup_log` and `dsa_imports` were written by the scripts
+and read by nothing. `GET /api/ops` now reads all three and `/profile` shows them,
+so "when was the last backup" has an answer that comes from the row the script
+wrote.
 
 ---
 
-## 8. Known limits
+## 8. Migration 005, applied this session
+
+`migrations/005_hardening.sql` was applied and `npm run verify` still exits 0
+after it. `001_init.sql` was deliberately not edited: `scripts/migrate.mjs` records
+the SHA-256 of every migration and treats a changed file as a hard stop, so a
+fresh install reaches the same state by applying 001 then 005.
+
+Seven numbered blocks: six defects and one pair of missing indexes. Each is
+explained in full in the file itself.
+
+| # | Defect | What it did |
+| --- | --- | --- |
+| 1 | `trg_day_logs_no_backdate_upd` rejected **every** update to a `day_logs` row older than seven days | `recomputeDay()` writes `pushes`, `money_touches`, `day_colour`, `conditions_met` and `week_n`, which are derived rather than entered, and `recomputeRange()` walks all 150 days on GitHub sync, on a repository edit and on any start date change. From the eighth day of real use each of those would have raised SQLSTATE 45000 and surfaced as a 500. The trigger now fires only when a column a person enters actually changes, compared with the null safe `<=>` |
+| 2 | `sessions` had no `user_id` | "Sign out everywhere" was `data LIKE '%"userId":12%'`, which also matches users 120, 123 and 1234. The column is added, backfilled from the stored JSON, and carries a foreign key |
+| 3 | Anonymous session rows accumulated | `GET /api/csrf` is unauthenticated and wrote a 30 day row per call. The backlog is cleared here; `lib/server/session.ts` now gives a session with no user two hours |
+| 4 | Two taps produced two open timers | Read-then-write race in `POST /api/sessions/start`. A generated column holds the user id only while a row is open, under `UNIQUE KEY uq_session_open_one`, so MySQL refuses the second |
+| 5 | A day could be counted twice on `/pushes` | `uq_push_sha` was `(user_id, repo_id, sha_head)`, and a day's head commit changes between syncs. The key is now `(user_id, repo_id, push_date)`, which is what the sync loop iterates |
+| 6 | Deleting a user deleted the audit trail | `fk_audit_user` was `ON DELETE CASCADE`, now `ON DELETE SET NULL` |
+| 7 | Two hot paths had no index | `dsa_topics(ord)`, which `/dsa` orders by on every request, and `study_sessions(open_user_id, started_at)` for the open session lookup |
+
+`tests/triggers.test.mjs` pins block 1 with **7 tests, all passing**. It cannot
+insert an aged `day_logs` row, because the INSERT trigger correctly forbids exactly
+that, so it builds a probe table with `CREATE TABLE … LIKE day_logs`, ages a row
+inside it, and attaches the trigger body read verbatim out of
+`migrations/005_hardening.sql` with only the names rewritten. The predicate under
+test is therefore the shipped predicate. The probe table is dropped in a `finally`.
+
+---
+
+## 9. Known limits
 
 Stated rather than hidden.
 
-- **The offline harness cannot catch a stale server.** `verify-screens-offline.mjs`
-  imports the handlers from source, so the client and server are always the same
-  version inside it. A running server older than the client is invisible to it.
-  This happened once: `/roles` passed every check while the deployed process was
-  still returning the previous payload, and the browser threw
-  "Cannot read properties of undefined (reading 'total')". Two mitigations are in
-  place: `roles.mjs` normalises the payload so a missing field degrades one panel
-  instead of the page, and section 12.8 of the runbook says to restart after any
-  change under `src/`. **Restart the server after changing server code.**
+- **Whether a screen visibly fills its panels is not checked anywhere.** The data
+  arrives after hydration, so it needs a real browser. Sections 4 and 5 are the
+  two halves of what can be checked without one.
 - **`dsa_problems` is empty.** Deliberate. `final.md` does not contain the 474
   names, so `/dsa` tracks per topic and says so until a real export is imported.
 - **The 150 day window cannot move.** Appendix C lists every date and the four
   gates sit on named dates. The *start date* is per person and moves; days before
   it are neutral. See `docs/ADDITIONS.md`.
-- **The smoke harness needs `linkedom`,** installed with `--no-save`. It is not a
-  dependency and never ships.
-- **Docker was not built here.** Docker is not installed on this machine. The
+- **A stale server is still possible across a deployment.** A Next build compiles
+  the screen and the route together, so they cannot disagree within one
+  deployment. A browser holding an old page open against a new server still can.
+  Screens normalise their payload so a missing field costs one panel rather than
+  the page. `docs/RUNBOOK.md` section 12.8 gives the two commands that say whether
+  a running process is older than the build.
+- **Docker was not built here.** Docker is not installed on this machine.
   `docker-compose.yml` was parsed and validated as YAML (3 services, 1 volume) but
   no image was built and no container was run.
 - **`GET /api/doc/:slug` returns Markdown source, not HTML.** There is no client
   side renderer, so `/reference` shows it in a `<pre>` and says so.
-- **The block window check on manual sessions can never fail** as the handler is
-  written, because it tests each block's own start minute rather than the wall
-  clock. The rules are stated in the form regardless. Changing that would be a
-  server side decision, not a client one.
-- **Signup is rate limited** to 5 per 15 minutes per IP, per section 5.3. Running
-  the smoke harness more than five times in a quarter hour will be refused. That
-  is the limiter working.
+- **The block window check on a manual session can never fail** as
+  `app/api/sessions/manual/route.ts` is written, because it passes the block's own
+  start minute to `blockAllowedAt` rather than the wall clock. The rules are stated
+  in the form regardless. Changing it would be a server side decision.
+- **Login is rate limited** to 5 attempts per 15 minutes per address and per email,
+  per section 5.3. `npm run smoke` signs in, so running it more than five times in
+  a quarter hour is refused. That is the limiter working. Restarting the process
+  clears the counters, because they live in memory.
 
 ---
 
@@ -280,21 +324,23 @@ assumed.
 
 | Area | Finding |
 | --- | --- |
-| **Open signup** | **Was a blocker.** `requireAnon` was the only guard, so any stranger could register on the server. Now gated: closed after the first account, 403 `SIGNUP_CLOSED`. Fails closed if the user count cannot be read. |
-| **`npm audit`** | **Was 2 high severity.** `ip-address` 10.0.1 via `express-rate-limit` 8.1.0, and reachable because `ipKeyGenerator(req.ip)` runs on every login. Upgraded to 8.6.2, `ip-address` 10.5.0. Now **0 vulnerabilities**. |
-| SQL injection | Clean. Every query parameterised, `multipleStatements` off. Two dynamic `SET` clauses exist; both build column names from a hardcoded allow-list (`WRITABLE_DAY_FIELDS`, and literal keys in `saveState`). Two `IN (...)` clauses generate placeholders only, never values. |
-| XSS | One unescaped template output, `verificationLogHtml` on /reference. It is `renderMarkdown()` output over `data/final.md`, and `renderMarkdown` escapes HTML, which is asserted in `security.test.mjs`. Client side, `el()` throws on `html:` and there is no `innerHTML` anywhere; enforced for all 24 screens by `screens.test.mjs`. |
-| Session cookie | `httpOnly`, `SameSite=Lax`, `secure` when `NODE_ENV=production`, `path=/`, 30 day rolling, stored in MySQL, `proxy` aware. Name `roadmap.sid`, so no framework fingerprint. |
-| CSRF | Guard on the whole of `/api`. A POST without a token gets 403 `FORBIDDEN`. Token rotated on signup and login. |
-| Password storage | Argon2id at m=19456, t=2, p=1. Options frozen. Minimum 12 characters, local blocklist, no network service. Constant-time dummy verify on unknown email, so response timing does not reveal whether an account exists. |
-| Secrets in prod | Config **refuses to boot** in production without a 64 hex `TOKEN_ENC_KEY`, and refuses any `SESSION_SECRET` under 32 characters. Both verified by simulating production config. |
-| Error leakage | Stack traces to the server log with a timestamp; the client gets a generic sentence. `x-powered-by` off. |
-| Headers | HSTS one year with subdomains in production. CSP has no `unsafe-inline` on script or style and no `eval`; `object-src`, `frame-src` and `frame-ancestors` all `none`. Permissions-Policy turns off camera, geolocation, microphone, payment and usb. |
-| Indexing | `robots.txt` is `Disallow: /`. A personal tracker has no business in a search index. |
-| `/healthz` | Unauthenticated on purpose, for the proxy probe. Returns db up/down, the date, the current block and `env`. No credentials, no counts, no user data. |
-| GitHub token | Encrypted at rest. `GET /api/me` returns only `has_github_token`. |
-| Dead surface | `public/uploads` is mounted static but the directory does not exist and no route writes to it. `public_progress` and `public_slug` are stored and nothing serves a public page; /profile says so. Both documented in RUNBOOK 12.6. |
-| Secret hygiene | `.env` is in both `.gitignore` and `.dockerignore`, and the Dockerfile copies no secret into a layer. The development `DB_PASSWORD` still contains a placeholder word and **must be rotated** before deployment. |
+| **Open signup** | **Was a blocker.** `requireAnon` was the only guard, so any stranger could register on the server. Now gated by `lib/server/signup.ts`: once the one account exists `POST /api/auth/signup` answers 403 `SIGNUP_CLOSED`, `GET /signup` answers 200 with a page saying account creation is closed, and `/login` stops offering the link. Fails closed if the user count cannot be read. Covered by 13 tests in `tests/signup-gate.test.mjs` |
+| **`npm audit --omit=dev`** | **`found 0 vulnerabilities`**, exit 0. The two high severity `ip-address` advisories that used to need managing here came in through `express-rate-limit`; both that package and `express` itself are gone, and the limits are now `lib/server/rateLimit.ts` |
+| SQL injection | Clean. Every query parameterised, `multipleStatements: false` in `lib/db/pool.ts`. Two dynamic `SET` clauses exist; both build column names from a hardcoded allow-list (`WRITABLE_DAY_FIELDS`, and literal keys in `saveState`). Two `IN (...)` clauses generate placeholders only, never values |
+| XSS | `renderMarkdown()` escapes HTML before emitting it, asserted in `security.test.mjs` against a script tag, an `onerror` image and a fenced code block. On the client there is no `dangerouslySetInnerHTML` and no `innerHTML` anywhere under `app/` or `components/`, and the CSP sets `style-src-attr 'none'`, so no style attribute can be written into markup either |
+| Session cookie | `httpOnly`, `SameSite=Lax`, `secure` when `NODE_ENV=production`, `path=/`, 30 day rolling, stored in MySQL. Name `roadmap.sid`, so no framework fingerprint. A session with no user gets two hours, not thirty days |
+| CSRF | Guard on the whole of `/api`. A POST without a token gets 403 `FORBIDDEN`. Token rotated on signup and login |
+| Password storage | Argon2id at m=19456, t=2, p=1, frozen so nothing can weaken it at runtime. Minimum 12 characters, local blocklist, no network service. Constant-time dummy verify on unknown email, so response timing does not reveal whether an account exists |
+| Secrets in prod | Config **refuses to boot** in production without a 64 hex `TOKEN_ENC_KEY`, and refuses any `SESSION_SECRET` under 32 characters |
+| Error leakage | Stack traces to the server log with a timestamp; the client gets a generic sentence. `x-powered-by` off |
+| Headers | HSTS one year with subdomains in production. CSP carries a per request nonce, has no `unsafe-inline` on script and no `eval`; `object-src` and `frame-ancestors` are `none`. Permissions-Policy turns off camera, geolocation, microphone, payment and usb |
+| Open redirect | `safeNextPath` refuses an absolute URL, a scheme-relative URL, the backslash variant, and anything with whitespace or a control character |
+| Request size | 256 kB, enforced inside `parseBody` on both the declared and the real length, so no route can forget it |
+| Indexing | `robots.txt` is `Disallow: /`. A personal tracker has no business in a search index |
+| `/api/healthz` | Unauthenticated on purpose, for the proxy probe. Returns db up/down, the date, the current block and `env`. No credentials, no counts, no user data. `/healthz` is kept as an alias |
+| GitHub token | Encrypted at rest with `TOKEN_ENC_KEY`. `GET /api/me` returns only `has_github_token` |
+| Dead surface | There is no upload mount. The Express build served `public/uploads` statically against a directory that never existed; Next serves only what is in `public/`, and nothing writes there. `public_progress` and `public_slug` are stored and nothing serves a public page; `/profile` says so. Documented in RUNBOOK 12.6 |
+| Secret hygiene | `.env` is in both `.gitignore` and `.dockerignore`, and the Dockerfile copies no secret into a layer. The development `DB_PASSWORD` still contains a placeholder word and **must be rotated** before deployment |
 
 The production environment checklist is at the bottom of `.env.example`, and the
 live-domain `curl` checks are in `docs/RUNBOOK.md` section 12.4.
@@ -304,14 +350,22 @@ live-domain `curl` checks are in `docs/RUNBOOK.md` section 12.4.
 ## 11. How to reproduce all of it
 
 ```bash
-npm test                                  # 604 tests
-npm run verify                            # the Appendix E contract
-npm install linkedom --no-save
-node scripts/smoke-screens.mjs            # 23 of 23 screens, needs the server up
-node scripts/check-links.mjs --dry-run --limit=4
-node scripts/sync-github.mjs --dry-run
-node scripts/export-all.mjs --dry-run
-node scripts/backup.mjs --dry-run
-node scripts/weekly-digest.mjs --week=1
+npm run typecheck                                  # exit 0
+npm run build                                      # exit 0
+npm run verify                                     # SEED VERIFIED. 70 assertions
+npm test                                           # 518 tests, 60 skipped with no server
+npm audit --omit=dev                               # found 0 vulnerabilities
+npx tsx scripts/check-links.mjs --dry-run --limit=4
+npx tsx scripts/sync-github.mjs --dry-run
+npx tsx scripts/export-all.mjs --dry-run
+npx tsx scripts/backup.mjs --dry-run
+npx tsx scripts/weekly-digest.mjs --week=1
 ```
 
+For the 60 HTTP tests and the smoke run, a server has to be listening:
+
+```bash
+npm run build; npm start                                    # one terminal
+npm test                                                    # the other: 518 passing, 0 skipped
+npm run smoke -- --email=you@example.com --password=...
+```

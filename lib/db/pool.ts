@@ -156,6 +156,44 @@ export async function transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * A `LIMIT n OFFSET m` clause built from integers rather than placeholders.
+ *
+ * This exists because of a real MySQL protocol limitation, not a preference.
+ * Every helper in this file uses `execute()`, which is a genuine prepared
+ * statement, and MySQL refuses a bound parameter in LIMIT or OFFSET there:
+ *
+ *   SELECT ... LIMIT ? OFFSET ?     ->  Error: Incorrect arguments to
+ *                                       mysqld_stmt_execute
+ *
+ * That error is a runtime one. It type checks, it lints, and it fails on the
+ * first request — which is exactly how five paginated endpoints were nearly
+ * shipped broken.
+ *
+ * Interpolating here is safe, and is the only reason this function exists rather
+ * than the caller doing it: both values pass through Math.trunc and are clamped
+ * to a bounded range, so what reaches the SQL is always a plain integer. Nothing
+ * a caller can pass — a string, a float, NaN, Infinity, a nested object — can
+ * emerge as anything other than a number in range.
+ *
+ * @param limit  rows to return. Clamped to 1..MAX_PAGE_SIZE.
+ * @param offset rows to skip. Clamped to 0..MAX_PAGE_OFFSET.
+ */
+export const MAX_PAGE_SIZE = 1000;
+export const MAX_PAGE_OFFSET = 1_000_000;
+
+export function limitOffset(limit: number, offset: number = 0): string {
+  const l = Number(limit);
+  const o = Number(offset);
+  const safeLimit = Number.isFinite(l)
+    ? Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(l)))
+    : MAX_PAGE_SIZE;
+  const safeOffset = Number.isFinite(o)
+    ? Math.min(MAX_PAGE_OFFSET, Math.max(0, Math.trunc(o)))
+    : 0;
+  return `LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+}
+
 export async function closePool(): Promise<void> {
   if (globalThis.__roadmapPool) {
     await globalThis.__roadmapPool.end();

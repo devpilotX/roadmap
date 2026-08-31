@@ -291,6 +291,17 @@
     background: var(--border);
   }
 
+  /* The variant the cell falls back to, `calcell__dot--${day.day_colour ?? 'todo'}`
+   * for a day nobody has logged yet. It had no rule at all, so the dot kept the
+   * base var(--surface) fill on a var(--canvas) cell: in the markup, invisible on
+   * the screen. It is a ring and not a fill on purpose. Green, orange and red carry
+   * fixed meaning here, and a day with nothing recorded against it has no meaning
+   * to carry, so it reads as an empty slot rather than as a fourth colour. */
+  .calcell__dot--todo {
+    background: transparent;
+    border: 1px solid var(--muted);
+  }
+
   .calcell__dsa {
     font-size: 10px;
     font-family: var(--mono);
@@ -1224,6 +1235,43 @@
     font-size: var(--text-2xl);
     font-weight: var(--weight-bold);
     line-height: 1;
+  }
+
+  /* ------------------------------------------- two rules about design.css
+   *
+   * Neither of these belongs to one screen. Both are corrections to component
+   * rules that live in design.css, and they are here only because that file was
+   * being edited elsewhere at the time. globals.css imports design.css and then
+   * this file, both into @layer components, so these win on source order as well
+   * as on specificity. Move them next to the rules they correct when convenient.
+   */
+
+  /* The calendar drawer was closed by translating it off screen, which left it in
+   * the accessibility tree and in the tab order the whole time. It now carries the
+   * `hidden` attribute while closed, and .drawer's own display: flex would beat the
+   * user agent's [hidden] rule without this. `hidden` is the state; nothing may
+   * override it. */
+  .drawer[hidden] {
+    display: none;
+  }
+
+  /* Every chart is drawn in a 720 unit viewBox at width: 100%, so on a 360px phone
+   * the whole drawing is scaled to half size and the 10px axis labels arrive at
+   * 5px. They also used to carry preserveAspectRatio="none", which squashed the
+   * glyphs on top of that; that attribute is gone from components/ui/Charts.tsx.
+   * Below 700px the chart keeps a floor width and this wrapper scrolls sideways
+   * instead, so the text is drawn near the size it was designed at. At 700px and
+   * above the floor is under the container width, there is nothing to scroll, and
+   * the desktop layout is exactly what it was. */
+  .chart-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  @media (max-width: 700px) {
+    .chart-scroll .chart {
+      min-width: 640px;
+    }
   }
 }
 
