@@ -41,6 +41,14 @@ export const NAV: readonly NavGroup[] = [
       { href: '/projects', label: 'Projects', icon: 'M3 7h7l2 2h9v10H3zM3 7V5h5l2 2' },
       { href: '/gates', label: 'Gates', icon: 'M6 3v18M18 3v18M6 8h12M6 15h12' },
       {
+        // Saturday, then Sunday, which is the order the two rituals happen in. The
+        // page existed and only the command palette could reach it, so anybody who
+        // never learned Ctrl K never found the seven questions at all.
+        href: '/review',
+        label: 'Review',
+        icon: 'M8 4h8v3H8zM5 7h14v14H5zM9 13l1.5 1.5L14 11M9 18h6',
+      },
+      {
         href: '/sundays',
         label: 'Sundays',
         icon: 'M12 4v2M12 18v2M4 12H2M22 12h-2M6 6 4.5 4.5M19.5 19.5 18 18M18 6l1.5-1.5M4.5 19.5 6 18M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
@@ -96,6 +104,13 @@ export const NAV: readonly NavGroup[] = [
     items: [
       { href: '/everything', label: 'Everything', icon: 'M4 6h16M4 12h16M4 18h16' },
       { href: '/reference', label: 'Reference', icon: 'M12 3 3 8l9 5 9-5zM3 14l9 5 9-5' },
+      {
+        // Also reachable from a week's own Print button, but that is one week and
+        // this is the chooser, so it belongs with the other things you go and read.
+        href: '/print/week',
+        label: 'Print a week',
+        icon: 'M7 9V4h10v5M7 15H5a1 1 0 0 1-1-1v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4a1 1 0 0 1-1 1h-2M7 14h10v7H7z',
+      },
       { href: '/stats', label: 'Stats', icon: 'M5 20V10M12 20V4M19 20v-7' },
       {
         href: '/profile',

@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { NAV, isActive } from '@/lib/nav';
-import { api } from '@/lib/client/api';
+import { signOutEverywhere } from '@/lib/client/signOut';
 import { Icon } from './Icon';
 import { useToast } from './ToastProvider';
 import { ThemeToggle } from './ThemeToggle';
@@ -29,15 +29,9 @@ export function Sidebar({ user, warningCount, lastSyncedAt }: SidebarProps) {
 
   async function signOut() {
     setSigningOut(true);
-    try {
-      await api.post('/api/auth/logout', {});
-    } catch (err) {
-      // The cookie is cleared server side either way; say so rather than hang.
-      toastError((err as Error).message);
-    } finally {
-      // A full navigation, so every cached server component is dropped.
-      window.location.href = '/login';
-    }
+    // Clears the session, the offline write queue and the cached page HTML. See
+    // lib/client/signOut.ts for why the last two matter on a shared device.
+    await signOutEverywhere(toastError);
   }
 
   return (

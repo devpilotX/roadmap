@@ -56,45 +56,53 @@ export function LineChart({
 
   return (
     <div>
-      <svg
-        className="chart"
-        viewBox={`0 0 ${w} ${h}`}
-        role="img"
-        aria-label={summary || 'Plan against actual'}
-        preserveAspectRatio="none"
-      >
-        {[0, 1, 2, 3, 4].map((g) => {
-          const gy = padT + (g * (h - padT - padB)) / 4;
-          return (
-            <g key={g}>
-              <line className="chart__grid" x1={padL} y1={gy} x2={w - padR} y2={gy} />
-              <text className="chart__axis" x={4} y={gy + 3}>
-                {Math.round(maxY - (g * maxY) / 4)}
+      {/* preserveAspectRatio="none" used to sit on this svg, which stretched the
+       * drawing to whatever box it landed in and squashed the axis glyphs with it.
+       * It is gone: the default, xMidYMid meet, keeps the 720 unit grid square.
+       * The wrapper is what makes the labels survive a phone. See .chart-scroll in
+       * screens.css: below 700px the chart keeps a floor width and this element
+       * scrolls sideways, instead of the whole drawing being scaled to half size
+       * and taking the 10px axis text down to 5px with it. */}
+      <div className="chart-scroll">
+        <svg
+          className="chart"
+          viewBox={`0 0 ${w} ${h}`}
+          role="img"
+          aria-label={summary || 'Plan against actual'}
+        >
+          {[0, 1, 2, 3, 4].map((g) => {
+            const gy = padT + (g * (h - padT - padB)) / 4;
+            return (
+              <g key={g}>
+                <line className="chart__grid" x1={padL} y1={gy} x2={w - padR} y2={gy} />
+                <text className="chart__axis" x={4} y={gy + 3}>
+                  {Math.round(maxY - (g * maxY) / 4)}
+                </text>
+              </g>
+            );
+          })}
+
+          <path className="chart__plan" d={planPath} />
+          {actualPath ? <path className="chart__actual" d={actualPath.trim()} /> : null}
+          {lastActual >= 0 ? (
+            <circle
+              className="chart__dot"
+              cx={x(lastActual)}
+              cy={y(points[lastActual].actual)}
+              r={3.5}
+            />
+          ) : null}
+
+          {points.map((p, i) => {
+            if (points.length > 12 && i % 3 !== 0 && i !== points.length - 1) return null;
+            return (
+              <text key={p.label} className="chart__axis" x={x(i)} y={h - 8} textAnchor="middle">
+                {p.label}
               </text>
-            </g>
-          );
-        })}
-
-        <path className="chart__plan" d={planPath} />
-        {actualPath ? <path className="chart__actual" d={actualPath.trim()} /> : null}
-        {lastActual >= 0 ? (
-          <circle
-            className="chart__dot"
-            cx={x(lastActual)}
-            cy={y(points[lastActual].actual)}
-            r={3.5}
-          />
-        ) : null}
-
-        {points.map((p, i) => {
-          if (points.length > 12 && i % 3 !== 0 && i !== points.length - 1) return null;
-          return (
-            <text key={p.label} className="chart__axis" x={x(i)} y={h - 8} textAnchor="middle">
-              {p.label}
-            </text>
-          );
-        })}
-      </svg>
+            );
+          })}
+        </svg>
+      </div>
 
       <div className="legend">
         <span className="legend__key">
@@ -148,56 +156,56 @@ export function BarChart({
 
   return (
     <div>
-      <svg
-        className="chart"
-        viewBox={`0 0 ${w} ${h}`}
-        role="img"
-        aria-label={summary || 'Bar chart'}
-        preserveAspectRatio="none"
-      >
-        {[0, 1, 2, 3, 4].map((g) => {
-          const gy = padT + (g * (h - padT - padB)) / 4;
-          return (
-            <g key={g}>
-              <line className="chart__grid" x1={padL} y1={gy} x2={w - padR} y2={gy} />
-              <text className="chart__axis" x={4} y={gy + 3}>
-                {valueFormat(Math.round(maxY - (g * maxY) / 4))}
-              </text>
-            </g>
-          );
-        })}
+      {/* Same two changes as the line chart above, for the same reason: no
+       * preserveAspectRatio="none", and a wrapper that scrolls under 700px so the
+       * bar labels are drawn at the size they were written at rather than scaled
+       * down with the whole grid. */}
+      <div className="chart-scroll">
+        <svg className="chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={summary || 'Bar chart'}>
+          {[0, 1, 2, 3, 4].map((g) => {
+            const gy = padT + (g * (h - padT - padB)) / 4;
+            return (
+              <g key={g}>
+                <line className="chart__grid" x1={padL} y1={gy} x2={w - padR} y2={gy} />
+                <text className="chart__axis" x={4} y={gy + 3}>
+                  {valueFormat(Math.round(maxY - (g * maxY) / 4))}
+                </text>
+              </g>
+            );
+          })}
 
-        {bars.map((b, i) => {
-          const cx = padL + slot * i + slot / 2;
-          return (
-            <g key={`${b.label}-${i}`}>
-              {b.bandLow !== undefined && b.bandHigh !== undefined ? (
+          {bars.map((b, i) => {
+            const cx = padL + slot * i + slot / 2;
+            return (
+              <g key={`${b.label}-${i}`}>
+                {b.bandLow !== undefined && b.bandHigh !== undefined ? (
+                  <rect
+                    className="chart__band"
+                    x={cx - barW / 2 - 3}
+                    y={y(b.bandHigh)}
+                    width={barW + 6}
+                    height={Math.max(1, y(b.bandLow) - y(b.bandHigh))}
+                    rx={2}
+                  />
+                ) : null}
                 <rect
-                  className="chart__band"
-                  x={cx - barW / 2 - 3}
-                  y={y(b.bandHigh)}
-                  width={barW + 6}
-                  height={Math.max(1, y(b.bandLow) - y(b.bandHigh))}
+                  className={`chart__bar${b.tone ? ` chart__bar--${b.tone}` : ''}`}
+                  x={cx - barW / 2}
+                  y={y(b.value)}
+                  width={barW}
+                  height={Math.max(0, h - padB - y(b.value))}
                   rx={2}
                 />
-              ) : null}
-              <rect
-                className={`chart__bar${b.tone ? ` chart__bar--${b.tone}` : ''}`}
-                x={cx - barW / 2}
-                y={y(b.value)}
-                width={barW}
-                height={Math.max(0, h - padB - y(b.value))}
-                rx={2}
-              />
-              {bars.length <= 24 ? (
-                <text className="chart__axis" x={cx} y={h - 8} textAnchor="middle">
-                  {b.label}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-      </svg>
+                {bars.length <= 24 ? (
+                  <text className="chart__axis" x={cx} y={h - 8} textAnchor="middle">
+                    {b.label}
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
       {summary ? <p className="text-xs muted">{summary}</p> : null}
     </div>
   );

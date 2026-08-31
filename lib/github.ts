@@ -298,7 +298,8 @@ export async function syncUser(
           `INSERT INTO github_pushes (user_id, repo_id, push_date, pushed_at, commit_count, sha_head, message_head, source, suspicious)
            VALUES (?, ?, ?, ?, ?, ?, ?, 'api', ?)
            ON DUPLICATE KEY UPDATE commit_count = VALUES(commit_count), pushed_at = VALUES(pushed_at),
-             message_head = VALUES(message_head), suspicious = VALUES(suspicious)`,
+             sha_head = VALUES(sha_head), message_head = VALUES(message_head),
+             suspicious = VALUES(suspicious)`,
           [
             userId,
             repo.id,

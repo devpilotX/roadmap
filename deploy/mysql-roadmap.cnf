@@ -1,0 +1,91 @@
+#
+# /etc/my.cnf.d/roadmap.cnf
+#
+# MySQL tuning for the box this actually runs on: 2 vCPU and 946 MB of RAM, with
+# 6 GB of swap and zram behind it. Stock MySQL 8 assumes far more memory than
+# that and will either fail to start or spend its life being killed by earlyoom.
+#
+# Every value here is deliberate. Do not copy it onto a larger machine without
+# raising the buffer pool first.
+#
+
+[mysqld]
+
+# ---- character set -----------------------------------------------------------
+# The schema is utf8mb4 throughout and the application connects with
+# utf8mb4_0900_ai_ci. Setting it server side too means a client that forgets does
+# not silently create a latin1 table.
+character-set-server = utf8mb4
+collation-server     = utf8mb4_0900_ai_ci
+
+# ---- time zone: LOAD BEARING -------------------------------------------------
+# Five triggers in 001_init.sql and 005_hardening.sql compare against CURDATE(),
+# and the seven day retroactive rule is only correct if the server's idea of
+# "today" is Asia/Kolkata. The connection pool sets time_zone per connection as
+# well, but a trigger fired by anything else — mysql client, a restore, a cron —
+# uses the server default. India has no daylight saving, so a fixed offset is
+# exact rather than approximate.
+default-time-zone = '+05:30'
+
+# ---- memory ------------------------------------------------------------------
+# 96 MB buffer pool. The whole dataset is reference tables plus one person's
+# progress: the 2 GB default would be cache for data that does not exist.
+innodb_buffer_pool_size = 96M
+innodb_log_file_size    = 48M
+innodb_redo_log_capacity = 96M
+innodb_flush_method     = O_DIRECT
+
+# performance_schema costs roughly 150-200 MB of resident memory. On a 946 MB box
+# that is a fifth of the machine spent on instrumentation for a single user
+# application. Turn it back on temporarily if you ever need to diagnose a query.
+performance_schema = OFF
+
+# The application pool is capped at DB_CONNECTION_LIMIT (10). 30 leaves room for
+# the CLI scripts, a cron backup and a mysql shell at the same time.
+max_connections = 30
+table_open_cache = 200
+thread_cache_size = 8
+
+# Per connection buffers are allocated per connection, so on a small box they are
+# where memory quietly disappears.
+sort_buffer_size = 512K
+join_buffer_size = 512K
+read_buffer_size = 256K
+read_rnd_buffer_size = 512K
+
+tmp_table_size = 16M
+max_heap_table_size = 16M
+
+# ---- durability --------------------------------------------------------------
+# The default, and correct: every committed transaction is on disk. This is a
+# career tracker with a 150 day window that cannot be replayed, so losing the
+# last second of writes on a power cut is not acceptable.
+innodb_flush_log_at_trx_commit = 1
+sync_binlog = 1
+
+# ---- binary log --------------------------------------------------------------
+# No replication here, and the binlog is pure write amplification plus disk
+# growth on a 30 GB volume. Point in time recovery comes from the nightly
+# mysqldump in scripts/backup.mjs instead.
+disable_log_bin
+
+# ---- safety ------------------------------------------------------------------
+# STRICT_TRANS_TABLES makes a bad INSERT an error rather than a silent
+# truncation. The connection pool sets this per session too; this covers
+# everything else.
+sql_mode = STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO
+
+# Never reachable from outside the machine. Caddy terminates TLS and the app
+# talks to MySQL over loopback.
+bind-address = 127.0.0.1
+
+# ---- logging -----------------------------------------------------------------
+# log_error is deliberately NOT set. SELinux is Enforcing on this host and the
+# mysqld_log_t context belongs to the path the package created; pointing the error
+# log somewhere else earns a denial and a server that will not start. The package
+# default is correct, and `journalctl -u mysqld` plus that file are enough.
+#
+# The slow log names no file for the same reason: MySQL then writes
+# <hostname>-slow.log into the datadir, which already has the right context.
+slow_query_log = 1
+long_query_time = 1

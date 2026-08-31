@@ -20,7 +20,11 @@ export const GET = authedRoute<{ name: string }>(async ({ params, user }) => {
   const parsed = parseParams(params, paramsSchema);
   const name = parsed.name.replace(/\.csv$/i, '');
 
-  const spec = EXPORTABLE[name];
+  // Object.hasOwn, not a truthiness test on the lookup. `EXPORTABLE['constructor']`
+  // and `EXPORTABLE['toString']` inherit a function from Object.prototype, which is
+  // truthy, so the guard passed and the query below ran with an impossible table
+  // name and returned 500 instead of the 404 this is meant to give.
+  const spec = Object.hasOwn(EXPORTABLE, name) ? EXPORTABLE[name] : undefined;
   if (!spec) {
     throw notFound(
       `${name} is not exportable. Try one of: ${Object.keys(EXPORTABLE).sort().join(', ')}`

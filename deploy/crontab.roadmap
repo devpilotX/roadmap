@@ -1,0 +1,42 @@
+# /etc/cron.d/roadmap-tracker
+#
+# Every job runs as the service user, never as root, and loads the same
+# environment file the systemd unit uses. Two details are easy to get wrong here
+# and both have been:
+#
+#   1. `npx tsx`, never `node`. The scripts under scripts/ import TypeScript
+#      modules from lib/, so plain node fails with ERR_MODULE_NOT_FOUND.
+#   2. The environment has to be sourced. cron does not read a systemd
+#      EnvironmentFile, so without `set -a; . /etc/roadmap-tracker/roadmap.env`
+#      every job runs with no database credentials and exits 1 nightly.
+#
+# CRON_TZ makes these times Asia/Kolkata regardless of the server clock, which is
+# what the roadmap's day boundaries are defined in.
+#
+#   Check they are being picked up:   systemctl status crond
+#   Watch a run:                      journalctl -t roadmap-cron -f
+#   Run one by hand:                  sudo -u roadmap bash -lc 'set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/backup.mjs'
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CRON_TZ=Asia/Kolkata
+MAILTO=""
+
+# Nightly database dump, gzipped and verified, keeping 14 days. 02:30 is after the
+# night block closes and before anybody is awake.
+30 2 * * *   roadmap  set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/backup.mjs 2>&1 | logger -t roadmap-cron
+
+# GitHub push sync, hourly during waking hours. Without a token this is 60
+# requests an hour per address, which is plenty for a handful of repositories.
+17 6-23 * * * roadmap  set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/sync-github.mjs 2>&1 | logger -t roadmap-cron
+
+# Weekly digest, Sunday evening, after the Sunday review would have been done.
+0 20 * * 0   roadmap  set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/weekly-digest.mjs 2>&1 | logger -t roadmap-cron
+
+# Link checker, weekly. Reference material rots and a dead link on /library is
+# worth knowing about before it is needed.
+40 3 * * 1   roadmap  set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/check-links.mjs 2>&1 | logger -t roadmap-cron
+
+# Full export, monthly, so there is always a recent copy of everything in a format
+# that does not need this application to read.
+50 3 1 * *   roadmap  set -a; . /etc/roadmap-tracker/roadmap.env; set +a; cd /opt/roadmap-tracker && npx tsx scripts/export-all.mjs --zip 2>&1 | logger -t roadmap-cron

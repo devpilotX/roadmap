@@ -7,11 +7,20 @@
  *
  *   sessions.session_id  VARCHAR(128) primary key
  *   sessions.expires     INT UNSIGNED, seconds since the epoch
+ *   sessions.user_id     BIGINT UNSIGNED NULL, whose session this is
  *   sessions.data        MEDIUMTEXT, the session object as JSON
  *
- * The stored JSON keeps the key `userId`, because POST /api/me/password ends
- * every other session for a user with `data LIKE '%"userId":123%'` and that
- * query has to keep working.
+ * `user_id` arrived in migration 005 and is the column that makes "sign out
+ * everywhere" correct. Before it existed, POST /api/me/password ended a user's
+ * other sessions with `data LIKE '%"userId":12%'`, which has no trailing
+ * delimiter and therefore also matched users 120, 123 and 1234. The JSON still
+ * carries `userId` because it is the session payload, but no query keys off it.
+ *
+ * Two expiry windows, not one. An authenticated session gets the rolling thirty
+ * days the Express build had. A session with no user attached gets two hours,
+ * because GET /api/csrf is unauthenticated by design and every call used to
+ * leave a thirty day row behind: this database had accumulated 1,905 of them for
+ * a single user before the audit found it.
  *
  * The cookie value keeps the `s:<id>.<signature>` shape that cookie-signature
  * writes, so a session created by the old build is still readable by this one.
@@ -34,6 +43,16 @@ export const SESSION_COOKIE = 'roadmap.sid';
 export const CSRF_COOKIE = 'csrf_token';
 /** Rolling 30 days, exactly as the Express build had it. */
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * How long a session with nobody signed into it may live.
+ *
+ * GET /api/csrf has to work before a sign in, so it creates a session row. Giving
+ * that row the full thirty days meant every visit by anything that asked for a
+ * token — a browser, a probe, a crawler — left a row behind for a month, and the
+ * only sweeper ran from an authenticated path. Two hours is far longer than the
+ * gap between fetching a token and posting the form it belongs to.
+ */
+export const ANON_SESSION_TTL_SECONDS = 2 * 60 * 60;
 /**
  * How long a session row may go without having its expiry pushed forward.
  *
@@ -92,8 +111,18 @@ function newSessionId(): string {
   return randomBytes(24).toString('base64url');
 }
 
-function expiryStamp(): number {
-  return Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+/** The user this session belongs to, or null while nobody is signed in. */
+function sessionUserId(data: SessionData): number | null {
+  return typeof data.userId === 'number' && Number.isFinite(data.userId) ? data.userId : null;
+}
+
+/** Thirty days once signed in, two hours before that. */
+function ttlFor(data: SessionData): number {
+  return sessionUserId(data) === null ? ANON_SESSION_TTL_SECONDS : SESSION_TTL_SECONDS;
+}
+
+function expiryStamp(data: SessionData): number {
+  return Math.floor(Date.now() / 1000) + ttlFor(data);
 }
 
 /* ----------------------------------------------------------------- store */
@@ -120,9 +149,9 @@ async function readRow(id: string): Promise<{ data: SessionData; expires: number
 
 async function writeRow(id: string, data: SessionData): Promise<void> {
   await run(
-    `INSERT INTO sessions (session_id, expires, data) VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE expires = VALUES(expires), data = VALUES(data)`,
-    [id, expiryStamp(), JSON.stringify(data)]
+    `INSERT INTO sessions (session_id, expires, user_id, data) VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE expires = VALUES(expires), user_id = VALUES(user_id), data = VALUES(data)`,
+    [id, expiryStamp(data), sessionUserId(data), JSON.stringify(data)]
   );
 }
 
@@ -165,18 +194,21 @@ export async function readSession(): Promise<Session | null> {
  * cannot set a cookie, which is why the route wrapper is the one that calls it.
  */
 export async function refreshSessionWindow(session: Session): Promise<void> {
+  const ttl = ttlFor(session.data);
   const now = Math.floor(Date.now() / 1000);
-  const issuedAgo = session.expires ? SESSION_TTL_SECONDS - (session.expires - now) : Infinity;
+  const issuedAgo = session.expires ? ttl - (session.expires - now) : Infinity;
+  // An anonymous session is never extended: its two hours are the whole point.
+  if (sessionUserId(session.data) === null) return;
   if (issuedAgo < TOUCH_AFTER_SECONDS) return;
 
-  const expires = expiryStamp();
+  const expires = now + ttl;
   await run('UPDATE sessions SET expires = ? WHERE session_id = ?', [expires, session.id]).catch(
     () => {}
   );
   session.expires = expires;
 
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, sign(session.id), cookieOptions());
+  jar.set(SESSION_COOKIE, sign(session.id), cookieOptions(session.data));
 
   // A good moment to take the rubbish out: it is at most once a day per session,
   // and never on a request that is already doing a write.
@@ -204,13 +236,15 @@ async function sweepExpiredSessionsOccasionally(): Promise<void> {
 
 /* --------------------------------------------------------------- writing */
 
-const cookieOptions = () =>
+const cookieOptions = (data: SessionData) =>
   ({
     httpOnly: true,
     sameSite: 'lax' as const,
     secure: config.isProd,
     path: '/',
-    maxAge: SESSION_TTL_SECONDS,
+    // The cookie must not outlive the row it points at, or the browser keeps
+    // presenting an id the server has already swept.
+    maxAge: ttlFor(data),
   });
 
 /**
@@ -220,7 +254,12 @@ const cookieOptions = () =>
 export async function saveSession(session: Session): Promise<void> {
   await writeRow(session.id, session.data);
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, sign(session.id), cookieOptions());
+  jar.set(SESSION_COOKIE, sign(session.id), cookieOptions(session.data));
+  // The rolling refresh above is the usual place the rubbish gets taken out, but
+  // it only runs on an authenticated route. A deployment that is only ever hit
+  // anonymously would otherwise never sweep at all, so the anonymous write path
+  // gets the same once-an-hour-per-process opportunity.
+  void sweepExpiredSessionsOccasionally();
 }
 
 /**

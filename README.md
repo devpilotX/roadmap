@@ -30,7 +30,14 @@ the daily number hard to fake.
 
 ## Getting started
 
+MySQL 8.0.16 or later and Node 20.9 or later. No migration creates the database or
+its user, so that comes first.
+
 ```bash
+mysql -u root -p -e "CREATE DATABASE roadmap_tracker CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+                     CREATE USER 'roadmap'@'localhost' IDENTIFIED BY 'pick something long';
+                     GRANT ALL ON roadmap_tracker.* TO 'roadmap'@'localhost';"
+
 cp .env.example .env          # then fill in DB_* and the two secrets
 npm install
 npm run setup                 # parse final.md, migrate, verify the counts
@@ -38,7 +45,14 @@ npm run build                 # compile the application
 npm start                     # http://127.0.0.1:3000
 ```
 
-For day to day work use `npm run dev`, which needs no build step.
+For day to day work use `npm run dev`, which needs no build step. `npm start` serves
+the compiled output only, so nothing you change on disk is live until `npm run build`
+has run.
+
+**Check `DB_PORT` before `npm run setup`.** `.env.example` ships `3306`, which is the
+MySQL default and what `docker compose` uses. It is not universal: the instance this
+was developed against listens on **3399**, and a wrong port fails at the first
+migration with `ECONNREFUSED`. `mysql --port=...` and `DB_PORT` have to agree.
 
 `npm run setup` is three steps and the third one is the important one: it fails
 loudly if a single Appendix E count is off.
@@ -53,13 +67,35 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 token at rest and is **required** in production, because a token cannot be stored
 without it.
 
+Then open `/signup` and create the one account. Signup closes itself afterwards.
+
+### The migrations
+
+`npm run migrate` applies them in filename order, once each, recording the SHA-256
+of every file. A migration whose content changed after it was applied is a hard
+stop, because running different SQL under one name is how databases drift.
+
+| File | What it is |
+| --- | --- |
+| `001_init.sql` | 118 tables, the foreign keys, and the triggers that enforce the money hour and the seven day retroactive limit |
+| `002_seed_reference.sql` | Generated from `final.md` by `npm run parse`. Do not hand edit |
+| `003_seed_calendar.sql` | The same, the 150 days |
+| `004_seed_money.sql` | The same, Part 17 |
+| `005_hardening.sql` | Six corrections found by audit, plus two missing indexes. Every one is explained in the file. The most consequential narrows the `day_logs` update trigger so it stops blocking the application's own derived recomputation, which would otherwise have failed every GitHub sync from the eighth day of use |
+
 ### With Docker
 
 ```bash
-cp .env.example .env          # set DB_HOST=db and a real DB_PASSWORD
-docker compose up --build
+cp .env.example .env          # a real DB_PASSWORD and the two secrets
+docker compose up --build -d  # detached, or the next line has no terminal
 docker compose exec app npm run setup
 ```
+
+`docker compose` creates the database and the user itself from `DB_NAME`, `DB_USER`
+and `DB_PASSWORD`, and it overrides `DB_HOST` to `db` and `DB_PORT` to `3306` for the
+containers, so leave those two at whatever suits your host. The database publishes no
+port; reach it with `docker compose exec db mysql`. The five scheduled jobs are a
+separate `cron` profile: `docker compose --profile cron up -d`.
 
 ## Commands
 
@@ -69,12 +105,12 @@ docker compose exec app npm run setup
 | `npm run build` | Compile for production |
 | `npm start` | Run the compiled application |
 | `npm run typecheck` | `tsc --noEmit`, strict |
-| `npm run lint` | ESLint over `app`, `components` and `lib` |
+| `npm run lint` | Lint the application source |
 | `npm run parse` | Parse `final.md` into SQL and write `docs/PARSE-REPORT.md` |
 | `npm run migrate` | Apply `migrations/*.sql` |
 | `npm run verify` | Check every row count against Appendix E. Exit 1 on a mismatch |
 | `npm run setup` | parse, migrate, verify, in that order |
-| `npm test` | The full test suite, `node:test` through `tsx` |
+| `npm test` | 518 tests through `node:test` and `tsx`. 60 of them are the HTTP surface and skip themselves when no server is listening |
 | `npm run smoke` | Drive every page and endpoint against a running server |
 | `npm run check-links` | HEAD every resource and week link, flag the dead ones |
 | `npm run sync-github` | Pull commits into the push tracker |
@@ -121,11 +157,11 @@ same way by hand, for example `npx tsx scripts/backup.mjs --dry-run`.
 
 ### Verifying the screens really draw
 
-`npm test` includes 123 static checks that hold the screens and the API together:
-every `/api/...` path a screen asks for resolves to a route that exists and
-exports the method it uses, and every path in the sidebar, the bottom bar and the
-command palette resolves to a page. TypeScript cannot see either of those, because
-both are strings.
+`npm test` holds the screens and the API together with static checks: every
+`/api/...` path a screen asks for resolves to a route that exists and exports the
+method it uses, and every path in the sidebar, the bottom bar and the command
+palette resolves to a page. TypeScript cannot see either of those, because both are
+strings.
 
 To prove the whole surface answers against the real database, start the server and
 run the smoke test:
@@ -139,6 +175,10 @@ It signs in as a real account, asserts that nothing private is reachable without
 session, that a write without a CSRF token is refused, that all 23 pages answer
 200 with their own heading, and that all 34 read endpoints return the keys their
 screen depends on. It writes nothing but the session row, which it then deletes.
+
+With the server up, `npm test` also stops skipping: the 60 tests in
+`tests/http.test.mjs` check the redirects, the 401 bodies, the security headers,
+the cookie flags and the CSRF refusals against the running process.
 
 Whether a screen visibly *fills* its panels needs a real browser, because the data
 arrives after hydration. Point Playwright at the same list when you want that.
@@ -185,7 +225,7 @@ roadmap in one list, grouped by the part of `final.md` it came from.
 /middleware.ts the Content Security Policy, with a per request nonce
 /data          final.md, the Striver step list, the password blocklist
 /docs          PARSE-REPORT.md, ADDITIONS.md, RUNBOOK.md, QA-REPORT.md, BUILD-PROMPT.md
-/migrations    001_init.sql and the three seed files
+/migrations    001_init.sql, three generated seed files, 005_hardening.sql
 /scripts       the parser, the verifier, and the operational scripts
 /public        img/, sw.js, manifest.webmanifest  — same origin
 /tests         node:test through tsx, no test framework dependency

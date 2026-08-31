@@ -82,6 +82,31 @@ COPY --from=build --chown=node:node /app/public           ./public
 # migration, the seed verification, the backup and the digest all run in here.
 # They import the TypeScript modules under lib/, so tsx and the full dependency
 # tree are needed for those commands and those commands only.
+#
+# KNOWN TRADEOFF, and it is a real one. This COPY lands on ./node_modules and
+# therefore OVERWRITES the minimal tree that `output: 'standalone'` traced three
+# lines above, so the runtime image ends up carrying typescript, eslint,
+# tailwindcss and their graph as well as the server's actual dependencies. The
+# image is larger and its attack surface is wider than the standalone output was
+# designed to be.
+#
+# The fix is a third dependency stage that installs production dependencies plus
+# tsx alone, and copying that instead:
+#
+#     FROM base AS clideps
+#     WORKDIR /app
+#     COPY package.json package-lock.json ./
+#     RUN npm ci --omit=dev --no-audit --no-fund \
+#      && npm install --no-save --no-audit --no-fund tsx@4.20.6
+#     ...
+#     COPY --from=clideps --chown=node:node /app/node_modules ./node_modules
+#
+# It is NOT applied here because it cannot be verified in this environment: Docker
+# is installed on neither the development machine nor the production host, which
+# runs the application natively under systemd behind Caddy (see deploy/). Shipping
+# an unbuilt, untested change to a container definition is worse than shipping a
+# documented one. Build the image once, confirm `npx tsx scripts/verify-seed.mjs`
+# still runs inside it, and then make the change.
 COPY --from=deps  --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node lib         ./lib
 COPY --chown=node:node scripts     ./scripts

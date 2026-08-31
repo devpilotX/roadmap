@@ -73,16 +73,14 @@ export const PUT = authedRoute<{ date: string }>(async ({ request, params, user 
   }
 
   const patch: Record<string, unknown> = { ...body };
+  const deltas: Record<string, number> = {};
 
   if ('dsa_increment' in patch) {
-    const current = await one('SELECT dsa_solved FROM day_logs WHERE user_id = ? AND log_date = ?', [
-      user.id,
-      date,
-    ]);
-    patch.dsa_solved = Math.max(
-      0,
-      Number(current?.dsa_solved ?? 0) + Number(patch.dsa_increment)
-    );
+    // Handed to writeDayLog as a delta so MySQL performs the addition inside the
+    // same transaction as the rest of the write. Reading dsa_solved here and
+    // writing the sum back would be a read-modify-write across two connections,
+    // and two quick taps would lose one of the increments.
+    deltas.dsa_solved = Number(patch.dsa_increment);
     delete patch.dsa_increment;
   }
 
@@ -102,6 +100,6 @@ export const PUT = authedRoute<{ date: string }>(async ({ request, params, user 
     }
   }
 
-  const result = await writeDayLog(user.id, date, patch);
+  const result = await writeDayLog(user.id, date, patch, { deltas });
   return jsonOk({ log: result.log, colour: result.colour });
 });

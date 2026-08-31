@@ -218,8 +218,12 @@ describe('the calendar file', () => {
  *   - signing out has to clear BOTH cookies. Leaving the CSRF cookie behind left a
  *     token in the browser with no session row to match it against, and every
  *     subsequent sign in was refused until the cookie expired 30 days later.
- *   - the session JSON has to keep the key `userId`, because changing the password
- *     ends other sessions with `data LIKE '%"userId":N%'`.
+ *   - sessions are ended by sessions.user_id, never by a LIKE over the session
+ *     JSON. `data LIKE '%"userId":12%'` has no trailing delimiter, so it also
+ *     matched users 120, 123 and 1234, and a password change signed a different
+ *     account out. migration 005 added the column; these tests keep it in use.
+ *   - a session with nobody signed into it expires in hours, not in thirty days,
+ *     because the unauthenticated CSRF endpoint creates one on every call.
  */
 describe('the session and CSRF cookies', () => {
   const session = readFileSync(new URL('../lib/server/session.ts', import.meta.url), 'utf8');
@@ -245,10 +249,55 @@ describe('the session and CSRF cookies', () => {
     assert.match(body, /CSRF_COOKIE/, 'destroySession does not clear the CSRF cookie');
   });
 
-  it('keep the session key the password change query matches on', () => {
-    // The writer and the reader of that substring have to agree exactly.
+  it('end other sessions by user_id, never by a LIKE on the session JSON', () => {
+    // This replaced a test that pinned `data LIKE '%"userId":N%'`, which was the
+    // defect rather than the contract: the pattern has no trailing delimiter, so
+    // user 12 also matched users 120, 123 and 1234, and changing one person's
+    // password signed a different account out. Migration 005 added
+    // sessions.user_id and both call sites now key on it.
     assert.match(session, /userId\?: number/, 'the session no longer stores userId');
-    assert.match(password, /"userId":\$\{user\.id\}/, 'the DELETE no longer matches on userId');
+    assert.match(
+      session,
+      /INSERT INTO sessions \(session_id, expires, user_id, data\)/,
+      'session rows are no longer written with a user_id, so the DELETE below cannot work'
+    );
+    assert.match(
+      password,
+      /DELETE FROM sessions[\s\S]{0,120}?user_id = \?/,
+      'the password change no longer ends other sessions by user_id'
+    );
+
+    // The regression guard. If either file goes back to matching on the JSON, the
+    // cross-account bug comes back with it.
+    const resetScript = readFileSync(
+      new URL('../scripts/reset-password.mjs', import.meta.url),
+      'utf8'
+    );
+    for (const [name, src] of [
+      ['app/api/me/password/route.ts', password],
+      ['scripts/reset-password.mjs', resetScript],
+    ]) {
+      assert.ok(
+        !/data\s+LIKE/i.test(src),
+        `${name} matches sessions on a LIKE over the JSON again, which collides across user ids`
+      );
+    }
+    assert.match(
+      resetScript,
+      /DELETE FROM sessions WHERE user_id = \?/,
+      'the reset script no longer ends sessions by user_id'
+    );
+  });
+
+  it('give an anonymous session hours, not thirty days', () => {
+    // GET /api/csrf is unauthenticated and creates a row. At the full thirty day
+    // expiry this database accumulated 1,905 rows for a single user.
+    assert.match(session, /ANON_SESSION_TTL_SECONDS = 2 \* 60 \* 60/);
+    assert.match(
+      session,
+      /function ttlFor\(/,
+      'the expiry is no longer chosen per session type'
+    );
   });
 
   it('set the session cookie httpOnly, lax, path scoped and 30 days', () => {

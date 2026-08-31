@@ -721,7 +721,10 @@ function DsaBody({ b, big, ctx }: { b: DsaBlock; big: boolean; ctx: Ctx }) {
           </span>
         </div>
       </div>
-      <p className={big ? 'tasktext tasktext--big' : 'tasktext'}>{b.task ?? ''}</p>
+      {/* No task, no line. `?? ''` left an empty paragraph carrying tasktext's own
+       * bottom margin, so a day with no DSA task set drew a blank gap between the
+       * two numbers and the buttons that looked like text that had failed to load. */}
+      {b.task ? <p className={big ? 'tasktext tasktext--big' : 'tasktext'}>{b.task}</p> : null}
       {b.target_note ? <p className="text-xs muted">{b.target_note}</p> : null}
 
       {big ? (
@@ -1668,7 +1671,9 @@ export function TodayScreen({ todayLong }: { todayLong: string }) {
                           {`until ${nextBlock.label}, ${nextBlock.window}`}
                         </span>
                       </div>
-                      <p className="tasktext">{nextBlock.task ?? ''}</p>
+                      {/* Same as DsaBody: the countdown stands on its own when the
+                          next block has no task text against it. */}
+                      {nextBlock.task ? <p className="tasktext">{nextBlock.task}</p> : null}
                     </div>
                   ) : (
                     <div className="stack-sm">

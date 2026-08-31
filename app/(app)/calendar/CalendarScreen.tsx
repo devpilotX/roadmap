@@ -8,7 +8,7 @@
  * Keyboard: left and right move a day, t jumps to today, Esc closes the drawer.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/client/api';
 import { useDebounced, useResource } from '@/components/ui/useResource';
@@ -156,6 +156,21 @@ interface DrawerPayload {
 }
 
 /* ---------------------------------------------------------------- helpers */
+
+/**
+ * Everything inside `root` that a keyboard can land on. The same helper as the one
+ * in components/AccountMenu.tsx, copied rather than shared because it is four
+ * lines and importing a DOM helper out of a top bar popover to run the calendar
+ * drawer would be the wrong dependency. The offsetParent test is what excludes the
+ * buttons inside a collapsed `<details>`, which are in the markup but not reachable.
+ */
+function focusables(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], select, input, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null);
+}
 
 /**
  * The two window rules blockAllowedAt applies in lib/dates, repeated here so the
@@ -832,6 +847,14 @@ export function CalendarScreen() {
   const [focusDate, setFocusDate] = useState<string | null>(null);
   const [openDate, setOpenDate] = useState<string | null>(null);
   const drawerRef = useRef<HTMLElement | null>(null);
+  // Whatever had focus when the drawer opened, so closing can hand it back. There
+  // is no single trigger the way AccountMenu has one button: a cell, the Today
+  // button and a linked ?date= all open the same drawer.
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // Focus moves into the drawer when it opens, and only then. The open date changes
+  // under the arrow keys, and re-focusing the panel on every one of those would
+  // drag focus out of whatever field was being typed into.
+  const wasOpen = useRef(false);
   const linkedOnce = useRef(false);
 
   // One fetch for the whole drawer, so its heading, its week line and its body
@@ -844,10 +867,28 @@ export function CalendarScreen() {
   };
 
   const openDrawer = (date: string) => {
+    // Only on the way from closed to open. The scrim covers the grid while the
+    // drawer is open, so this should not be reachable from inside it, but recording
+    // an element that is about to be hidden as the place to return focus to would
+    // lose focus to the body, and the guard costs nothing.
+    if (!openDate) triggerRef.current = document.activeElement as HTMLElement | null;
     setOpenDate(date);
     setFocusDate(date);
   };
-  const closeDrawer = () => setOpenDate(null);
+
+  /**
+   * Closing hands focus back to whatever opened the drawer, which is the one half
+   * of the pattern a click on the scrim has to skip: that person is already
+   * pointing somewhere else, and pulling focus back to a calendar cell would fight
+   * them for it.
+   */
+  const closeDrawer = useCallback(
+    ({ restoreFocus = true }: { restoreFocus?: boolean } = {}) => {
+      setOpenDate(null);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    []
+  );
 
   // A date can be linked to directly, which is what the command palette does.
   useEffect(() => {
@@ -860,8 +901,46 @@ export function CalendarScreen() {
   }, [data, wantedDate]);
 
   useEffect(() => {
-    if (openDate && drawerRef.current) drawerRef.current.focus();
+    const isOpen = openDate !== null;
+    if (isOpen && !wasOpen.current) drawerRef.current?.focus();
+    wasOpen.current = isOpen;
   }, [openDate]);
+
+  /* ---- Escape, and Tab held inside the drawer, while it is open ---- */
+  useEffect(() => {
+    if (!openDate) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      // Escape lives here rather than in the grid handler below, because that one
+      // steps aside for a field and Escape has to work while a note is being typed.
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const panel = drawerRef.current;
+      if (!panel) return;
+      const items = focusables(panel);
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (active === first || active === panel)) {
+        // The panel itself is the shift case worth naming: it holds focus on open,
+        // and it is the last element in the document, so Tab backwards out of it
+        // would land on the page behind an aria-modal dialog.
+        event.preventDefault();
+        last.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [openDate, closeDrawer]);
 
   /* ---- keyboard ---- */
   useEffect(() => {
@@ -870,11 +949,13 @@ export function CalendarScreen() {
       const target = e.target as HTMLElement | null;
       if (target && typeof target.matches === 'function' && target.matches('input, textarea, select'))
         return;
-      if (e.key === 'Escape') {
-        closeDrawer();
-        return;
-      }
       if (e.key === 't' || e.key === 'T') {
+        // Opened from the keyboard, so record the return address the same way
+        // openDrawer does, and only when it is actually an open: t pressed inside an
+        // open drawer would otherwise file an element that is about to be hidden as
+        // the place to send focus back to. This effect cannot call openDrawer
+        // without re-binding the listener on every render.
+        if (!openDate) triggerRef.current = document.activeElement as HTMLElement | null;
         setFocusDate(data.today);
         setOpenDate(data.today);
         return;
@@ -1022,10 +1103,7 @@ export function CalendarScreen() {
               <button
                 type="button"
                 className="btn btn--sm"
-                onClick={() => {
-                  setFocusDate(today);
-                  setOpenDate(today);
-                }}
+                onClick={() => openDrawer(today)}
               >
                 Today
               </button>
@@ -1067,12 +1145,21 @@ export function CalendarScreen() {
       <div
         className="scrim"
         data-open={openDate ? '1' : '0'}
-        onClick={closeDrawer}
+        onClick={() => closeDrawer({ restoreFocus: false })}
         aria-hidden="true"
       />
+      {/* `hidden` is what makes a closed drawer genuinely closed. It was only ever
+          translated off screen, so it stayed in the accessibility tree and in the
+          tab order: a keyboard user tabbing past the calendar walked into an
+          invisible panel of fields, and a screen reader announced a dialog nobody
+          had opened. The trade is the 120 ms slide, which cannot run from
+          display: none; correctness is worth more than the animation, and under
+          prefers-reduced-motion there was no slide anyway. See .drawer[hidden] in
+          screens.css, which is what stops .drawer's own display: flex overriding it. */}
       <aside
         className="drawer"
         data-open={openDate ? '1' : '0'}
+        hidden={!openDate}
         role="dialog"
         aria-modal="true"
         aria-labelledby="c-drawer-title"
@@ -1096,7 +1183,7 @@ export function CalendarScreen() {
             type="button"
             className="iconbtn"
             aria-label="Close the day"
-            onClick={closeDrawer}
+            onClick={() => closeDrawer()}
           >
             <Icon path={ICON.close} />
           </button>

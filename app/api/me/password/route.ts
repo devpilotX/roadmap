@@ -2,8 +2,7 @@
  * POST /api/me/password
  *
  * Changing the password ends every other session for this user. The session rows
- * are matched on the JSON the session store writes, which is why that store keeps
- * the key `userId`.
+ * are matched on sessions.user_id, which migration 005 added for exactly this.
  */
 
 import { one, run } from '@/lib/db/pool';
@@ -47,11 +46,17 @@ export const POST = authedRoute(async ({ request, user, session }) => {
   await run('UPDATE users SET password_hash = ? WHERE id = ?', [hash, user.id]);
 
   // Changing the password destroys every other session for this user.
+  //
+  // This used to be a LIKE over the session JSON, matching the substring
+  // '"userId":12'. That pattern has no trailing delimiter, so it also matched the
+  // session JSON of users 120, 123 and 1234: changing one person's password
+  // signed a different account out. sessions gained a real user_id column in
+  // migration 005 precisely so this query can say what it means.
   const result = await run(
     `DELETE FROM sessions
       WHERE session_id <> ?
-        AND data LIKE ?`,
-    [session.id, `%"userId":${user.id}%`]
+        AND user_id = ?`,
+    [session.id, user.id]
   );
   await run(
     `INSERT INTO audit_log (user_id, table_name, row_pk, action, after_json)

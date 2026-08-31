@@ -1,0 +1,78 @@
+#
+# /etc/systemd/system/roadmap-tracker.service
+#
+#   systemctl daemon-reload
+#   systemctl enable --now roadmap-tracker
+#   systemctl status roadmap-tracker
+#   journalctl -u roadmap-tracker -f
+#
+# Logs go to the journal, not to a file, which is why there is no logrotate rule
+# for them. journald already rotates and compresses.
+#
+
+[Unit]
+Description=The Roadmap Tracker
+Documentation=https://github.com/devpilotX/roadmap
+# The app answers /api/healthz with db: down rather than crashing when MySQL is
+# absent, but there is no reason to start before it. Requires, not Wants: if the
+# database cannot start, a running app would serve nothing but errors.
+Requires=mysqld.service
+After=network-online.target mysqld.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=roadmap
+Group=roadmap
+WorkingDirectory=/opt/roadmap-tracker
+
+# Secrets live outside the deployment directory, owned by root and readable only
+# by the service group, so a `git pull` can never overwrite them and a directory
+# listing can never expose them.
+EnvironmentFile=/etc/roadmap-tracker/roadmap.env
+
+# `next start` rather than the standalone server, because npm ci runs on this box
+# and the full node_modules is present. -H 127.0.0.1 is not optional: without it
+# Next binds every interface and publishes an unauthenticated port straight past
+# Caddy and the firewall.
+ExecStart=/usr/bin/node /opt/roadmap-tracker/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3200
+
+Restart=on-failure
+RestartSec=5
+# Five failures in a minute means something is wrong that restarting will not fix.
+StartLimitBurst=5
+StartLimitIntervalSec=60
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# ---- sandboxing --------------------------------------------------------------
+# This process is reachable from the internet through Caddy, so it gets as little
+# of the machine as it can function with.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# The app writes backups and exports into its own directory and nothing else.
+ReadWritePaths=/opt/roadmap-tracker/backups
+ReadWritePaths=/opt/roadmap-tracker/.next
+
+# ---- memory ------------------------------------------------------------------
+# No MemoryMax. A hard cap on a 946 MB box turns a traffic spike into a killed
+# process, and earlyoom is already running as the real backstop. MemoryHigh
+# applies reclaim pressure instead, and NODE_OPTIONS in the environment file
+# bounds the JavaScript heap, which is the allocation that actually grows.
+MemoryHigh=420M
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

@@ -21,9 +21,18 @@
  *     a content hash in every filename. Those are cached on first use rather than
  *     precached, which is both correct and safer, because a hashed URL can never
  *     go stale. Only the two files whose URLs are fixed are precached.
+ * v4  the page cache became privacy aware. Until now the last successfully seen
+ *     HTML for every route was written to Cache Storage and nothing ever removed
+ *     it: signing out cleared the cookies and left a full, readable copy of every
+ *     screen behind, so the next person to use a shared device could read the
+ *     previous person's pages offline, and any same origin script could read them
+ *     through caches.match(). Three changes: the version bump below evicts every
+ *     existing pages cache on activate, /login and /signup are never cached, and a
+ *     'signout' message from the page deletes the whole page cache. Bumping the
+ *     version is itself part of the fix, not housekeeping.
  */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = `roadmap-shell-${VERSION}`;
 const PAGES = `roadmap-pages-${VERSION}`;
 
@@ -66,6 +75,15 @@ function isImmutable(url) {
 
 function isStatic(url) {
   return url.pathname.startsWith('/img/') || url.pathname === '/manifest.webmanifest';
+}
+
+/**
+ * The sign in and sign up screens. Never cached: they hold nothing worth having
+ * offline, and they are exactly what is on screen right after a sign out, which is
+ * the moment the cache is being emptied.
+ */
+function isAuthPage(url) {
+  return url.pathname === '/login' || url.pathname === '/signup';
 }
 
 self.addEventListener('fetch', (event) => {
@@ -141,7 +159,12 @@ self.addEventListener('fetch', (event) => {
         const cache = await caches.open(PAGES);
         try {
           const res = await fetch(request);
-          if (res.ok) cache.put(request, res.clone());
+          // `res.redirected` is true when a protected route answered 302 and fetch
+          // followed it to /login. Storing that under the original URL would cache
+          // a sign in page as the offline copy of a real screen.
+          if (res.ok && !res.redirected && !isAuthPage(url)) {
+            cache.put(request, res.clone());
+          }
           return res;
         } catch {
           const hit = await cache.match(request);
@@ -165,6 +188,25 @@ self.addEventListener('fetch', (event) => {
 /** The page asks for a block reminder; the worker shows it. */
 self.addEventListener('message', (event) => {
   const data = event.data ?? {};
+
+  /**
+   * Sign out. Everything cached about the signed in person goes now.
+   *
+   * The cookies are cleared by the server, but the page cache is not the server's
+   * to clear, and Cache-Control cannot stop a cache.put the worker performs itself.
+   * Without this, a sign out left every screen readable on the device.
+   */
+  if (data.type === 'signout') {
+    event.waitUntil(
+      (async () => {
+        await caches.delete(PAGES);
+        // Reply so the page can wait for the cache to be gone before it navigates.
+        if (event.ports && event.ports[0]) event.ports[0].postMessage({ cleared: true });
+      })()
+    );
+    return;
+  }
+
   if (data.type === 'notify' && self.registration.showNotification) {
     self.registration.showNotification(data.title ?? 'The Roadmap Tracker', {
       body: data.body ?? '',
