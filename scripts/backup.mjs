@@ -21,8 +21,9 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip } from 'node:zlib';
@@ -63,13 +64,49 @@ async function logRow(fileName, bytes, ok, message) {
 
 /**
  * Runs mysqldump and gzips its stdout straight to disk, so a large database
- * never has to fit in memory. The password goes in on stdin as a defaults file,
- * never on the command line, so it cannot leak into a process list.
+ * never has to fit in memory.
+ *
+ * The credentials go into a temporary defaults file with mode 0600 which is
+ * deleted the moment the dump ends, so the password never appears on the command
+ * line and never reaches a process list.
+ *
+ * It used to be passed as `--defaults-file=/dev/stdin`, written to the child's
+ * stdin. That worked for years and then stopped: MySQL 8.0.46's mysqldump refuses
+ * a defaults file that is not a regular file, and a pipe is not one. The failure
+ * on this deployment was
+ *
+ *     mysqldump: [ERROR] Failed to open required defaults file: /dev/stdin
+ *     mysqldump: [ERROR] Fatal error in defaults handling. Program aborted!
+ *
+ * which is silent unless somebody reads the log, and it would have meant a nightly
+ * cron backup that failed every night while `backup_log` faithfully recorded that
+ * it had. A real file works on every platform, so the Windows branch is gone too.
  */
 function dump(target) {
   return new Promise((resolve_, reject) => {
+    // 0700 directory, 0600 file, in the OS temp location. mkdtempSync gives a
+    // unique name so two concurrent backups cannot read each other's credentials.
+    const dir = mkdtempSync(join(tmpdir(), 'roadmap-dump-'));
+    const cnf = join(dir, 'my.cnf');
+    writeFileSync(
+      cnf,
+      `[client]\nhost=${config.db.host}\nport=${config.db.port}\n` +
+        `user=${config.db.user}\npassword=${config.db.password}\n`,
+      { mode: 0o600 }
+    );
+
+    /** Removes the credentials file. Safe to call more than once. */
+    const shred = () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Nothing useful to do; the file is 0600 in a private temp directory.
+      }
+    };
+
     const args = [
-      `--defaults-file=/dev/stdin`,
+      // Must be the FIRST argument: mysqldump reads it before anything else.
+      `--defaults-file=${cnf}`,
       '--single-transaction',
       '--quick',
       '--routines',
@@ -79,50 +116,40 @@ function dump(target) {
       '--set-gtid-purged=OFF',
       config.db.database,
     ];
-    // /dev/stdin is not a thing on Windows, so the flag is dropped there and the
-    // password is passed through the environment instead, which mysqldump reads
-    // and which does not appear in the process list either.
-    const onWindows = process.platform === 'win32';
-    if (onWindows) args.shift();
 
-    const child = spawn(config.mysqldumpBin, onWindows
-      ? [
-          `--host=${config.db.host}`,
-          `--port=${config.db.port}`,
-          `--user=${config.db.user}`,
-          ...args,
-        ]
-      : args, {
-      env: onWindows ? { ...process.env, MYSQL_PWD: config.db.password } : process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    if (!onWindows) {
-      child.stdin.write(
-        `[client]\nhost=${config.db.host}\nport=${config.db.port}\nuser=${config.db.user}\npassword=${config.db.password}\n`
-      );
-    }
-    child.stdin.end();
+    const child = spawn(config.mysqldumpBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     let stderr = '';
     child.stderr.on('data', (d) => {
       const s = String(d);
-      // mysqldump warns about the password on stdin even when it is correct.
+      // mysqldump warns about a password on the command line even when there is
+      // not one. Keep every other line.
       if (!/Using a password on the command line/i.test(s)) stderr += s;
     });
 
     const out = createWriteStream(target);
-    pipeline(child.stdout, createGzip({ level: 9 }), out).catch(reject);
+    pipeline(child.stdout, createGzip({ level: 9 }), out).catch((err) => {
+      shred();
+      reject(err);
+    });
 
-    child.on('error', (err) =>
+    child.on('error', (err) => {
+      shred();
       reject(
         new Error(
           `${config.mysqldumpBin} could not be run: ${err.message}. Set MYSQLDUMP_BIN in .env to the full path.`
         )
-      )
-    );
+      );
+    });
     child.on('close', (code) => {
-      out.on('close', () => (code === 0 ? resolve_({ stderr }) : reject(Object.assign(new Error(stderr.trim() || `mysqldump exited ${code}`), { code }))));
+      out.on('close', () => {
+        shred();
+        if (code === 0) resolve_({ stderr });
+        else
+          reject(
+            Object.assign(new Error(stderr.trim() || `mysqldump exited ${code}`), { code })
+          );
+      });
     });
   });
 }
