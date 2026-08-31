@@ -109,6 +109,14 @@ function dump(target) {
       `--defaults-file=${cnf}`,
       '--single-transaction',
       '--quick',
+      // Without this, mysqldump tries to dump InnoDB tablespace metadata, which
+      // needs the GLOBAL PROCESS privilege:
+      //   Access denied; you need (at least one of) the PROCESS privilege(s)
+      //   for this operation when trying to dump tablespaces
+      // The application user deliberately holds privileges on its own database
+      // and nothing global, and granting PROCESS to fix a dump would be a poor
+      // trade for metadata this restore does not need.
+      '--no-tablespaces',
       '--routines',
       '--triggers',
       '--events',

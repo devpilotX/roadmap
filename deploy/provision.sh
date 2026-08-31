@@ -130,11 +130,15 @@ ALTER  USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
 -- Everything the migrations and the application need, on this database only.
 -- TRIGGER is required: 001_init.sql and 005_hardening.sql create five triggers,
 -- and without it migrate.mjs fails partway with an access denied error.
--- SUPER is deliberately absent, and so is any global privilege.
+-- EVENT is required by scripts/backup.mjs, which dumps with --events; without it
+-- mysqldump aborts on "Couldn't execute 'show events': Access denied", so the
+-- nightly backup fails while looking like a privilege problem in the app.
+-- SUPER is deliberately absent, and so is any global privilege: mysqldump is
+-- given --no-tablespaces precisely so it never asks for global PROCESS.
 GRANT SELECT, INSERT, UPDATE, DELETE,
       CREATE, DROP, ALTER, INDEX, REFERENCES,
       CREATE TEMPORARY TABLES, LOCK TABLES,
-      TRIGGER, CREATE VIEW, SHOW VIEW,
+      TRIGGER, EVENT, CREATE VIEW, SHOW VIEW,
       CREATE ROUTINE, ALTER ROUTINE, EXECUTE
   ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
 
