@@ -121,7 +121,7 @@ if [[ "$user_count" != "0" ]]; then
 else
   # Fresh CSRF token and cookie jar, then sign up.
   token="$(curl -s -c "$JAR" --max-time 20 "$BASE/api/csrf" \
-           | tr ',' '\n' | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
+           | tr ',' '\n' | grep -o '"csrf":"[^"]*"' | cut -d'"' -f4)"
   if [[ -z "$token" ]]; then
     no "could not obtain a CSRF token"
   else
@@ -142,7 +142,7 @@ else
 
       # The signup door must now be shut.
       t2="$(curl -s -c "$JAR.2" --max-time 20 "$BASE/api/csrf" \
-            | tr ',' '\n' | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
+            | tr ',' '\n' | grep -o '"csrf":"[^"]*"' | cut -d'"' -f4)"
       r2="$(curl -s -b "$JAR.2" --max-time 20 -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/signup" \
             -H 'Content-Type: application/json' -H "X-CSRF-Token: $t2" -H "Origin: $BASE" \
             -d '{"email":"second@invalid.localdomain","display_name":"Second","password":"another long passphrase 77","confirm_password":"another long passphrase 77"}')"
