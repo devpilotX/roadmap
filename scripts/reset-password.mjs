@@ -95,7 +95,12 @@ async function main() {
   step('Ending every session for this account');
   // All of them, not all but one: this is not being run from a browser, so there
   // is no current session worth keeping.
-  const gone = await run('DELETE FROM sessions WHERE data LIKE ?', [`%"userId":${user.id}%`]);
+  //
+  // Keyed on sessions.user_id, added in migration 005. This was previously a LIKE
+  // over the session JSON matching the substring '"userId":12', which has no
+  // trailing delimiter and so also matched users 120, 123 and 1234, ending
+  // sessions belonging to other accounts.
+  const gone = await run('DELETE FROM sessions WHERE user_id = ?', [user.id]);
   good(`${gone.affectedRows ?? 0} session${gone.affectedRows === 1 ? '' : 's'} ended`);
 
   await run(

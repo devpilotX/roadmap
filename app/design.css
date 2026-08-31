@@ -2045,3 +2045,121 @@
     color: #444;
   }
 }
+
+
+/* ------------------------------------------------- account menu (phone) */
+/*
+ * A second @layer components block. CSS merges layers of the same name, so these
+ * rules sit in exactly the same layer as everything above and cascade normally.
+ *
+ * The menu exists because .sidebar is display:none under 768px and the sidebar was
+ * the only host of the theme toggle and the sign out button.
+ */
+
+@layer components {
+  .acct {
+    position: relative;
+    display: none;
+  }
+
+  .acct__panel {
+    position: absolute;
+    top: calc(100% + var(--s2));
+    right: 0;
+    z-index: 50;
+    min-width: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+    padding: var(--s3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+  }
+
+  /* `hidden` is the state, so nothing here should override it. */
+  .acct__panel[hidden] {
+    display: none;
+  }
+
+  .acct__who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: var(--s3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .acct__name {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .acct__email {
+    font-size: var(--text-sm);
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .acct__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s3);
+  }
+
+  .acct__label {
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+
+  .acct__signout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s2);
+    width: 100%;
+    min-height: var(--tap);
+  }
+
+  @media (max-width: 768px) {
+    .acct {
+      display: block;
+    }
+  }
+}
+
+/* ------------------------------------------------------- touch targets */
+/*
+ * The project sets --tap: 44px as its own standard, and three controls sat under
+ * it: .iconbtn at 34px, .btn--sm at 30px and .chip at about 26px. Growing them
+ * would move every toolbar they appear in, so instead the HIT AREA is grown with a
+ * transparent pseudo-element and the painted size is left alone. This applies only
+ * to coarse pointers, so a mouse keeps the compact layout it was designed for.
+ */
+
+@layer components {
+  @media (pointer: coarse) {
+    .iconbtn,
+    .btn--sm,
+    .chip {
+      position: relative;
+    }
+
+    .iconbtn::after,
+    .btn--sm::after,
+    .chip::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, var(--tap));
+      height: max(100%, var(--tap));
+      transform: translate(-50%, -50%);
+      /* Purely a target. It must never paint, and never block the control's own
+         pointer handling, which it does not because it is a child of it. */
+      background: transparent;
+    }
+  }
+}

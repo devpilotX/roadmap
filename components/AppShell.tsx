@@ -13,6 +13,7 @@ import { flushQueue, onQueueChange, pendingCount } from '@/lib/client/offline';
 import { Icon } from './Icon';
 import { Sidebar } from './Sidebar';
 import { BottomBar } from './BottomBar';
+import { AccountMenu } from './AccountMenu';
 import { CommandPalette } from './CommandPalette';
 import { WarningsBell } from './WarningsBell';
 import { useToast } from './ToastProvider';
@@ -188,6 +189,10 @@ export function AppShell({
                 </span>
               ) : null}
             </div>
+
+            {/* Phone only. The sidebar carries these above 768px, and it is
+                hidden below that, which left no way to sign out on a phone. */}
+            <AccountMenu user={user} />
           </header>
 
           <div className="syncbar" data-show={showSync ? '1' : '0'} role="status">

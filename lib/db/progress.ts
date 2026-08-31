@@ -269,15 +269,33 @@ async function ensureDayRow(tx: Tx, userId: number, date: string, today: string)
  * Writes a patch onto a day log and recomputes its colour.
  * Only WRITABLE_DAY_FIELDS are accepted. day_colour, pushes and money_touches
  * are computed, never received.
+ *
+ * `deltas` adds to a column instead of replacing it, and the addition is done by
+ * MySQL inside this transaction rather than in JavaScript. PUT /api/day-logs/:date
+ * used to read dsa_solved on the pool, add the increment in JS, and write the sum
+ * back through this function's own separate transaction. Two quick taps, or the
+ * offline queue replaying a request, interleaved as read-read-write-write and one
+ * of the increments vanished. `col = GREATEST(0, col + ?)` cannot lose one.
  */
 export async function writeDayLog(
   userId: number,
   date: string,
   patch: Record<string, any>,
-  { today = todayInTz() }: { today?: string } = {}
+  {
+    today = todayInTz(),
+    deltas = {},
+  }: { today?: string; deltas?: Record<string, number> } = {}
 ): Promise<{ log: Row | null; colour: RecomputeResult | null }> {
   const allowed = WRITABLE_DAY_FIELDS as readonly string[];
-  const fields = Object.keys(patch).filter((k) => allowed.includes(k));
+  const deltaFields = Object.keys(deltas).filter(
+    (k) => allowed.includes(k) && Number.isFinite(deltas[k])
+  );
+  // A column driven by a delta is not also set absolutely. Assigning the same
+  // column twice in one UPDATE is legal MySQL but the result depends on
+  // evaluation order, and the delta is the one the caller meant.
+  const fields = Object.keys(patch).filter(
+    (k) => allowed.includes(k) && !deltaFields.includes(k)
+  );
   return transaction(async (tx) => {
     await ensureDayRow(tx, userId, date, today);
     const before = await tx.one('SELECT * FROM day_logs WHERE user_id = ? AND log_date = ?', [
@@ -285,13 +303,18 @@ export async function writeDayLog(
       date,
     ]);
 
-    if (fields.length) {
-      const sets = fields.map((f) => `${f} = ?`);
+    if (fields.length || deltaFields.length) {
+      const sets = [
+        ...fields.map((f) => `${f} = ?`),
+        // Clamped at zero so a negative increment can never drive a count below it.
+        ...deltaFields.map((f) => `${f} = GREATEST(0, ${f} + ?)`),
+      ];
       const params: SqlParam[] = fields.map((f) => {
         const v = patch[f];
         if (typeof v === 'boolean') return v ? 1 : 0;
         return v;
       });
+      for (const f of deltaFields) params.push(Number(deltas[f]));
       params.push(userId, date);
       await tx.run(
         `UPDATE day_logs SET ${sets.join(', ')} WHERE user_id = ? AND log_date = ?`,
