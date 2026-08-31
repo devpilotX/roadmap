@@ -46,12 +46,16 @@ ok "current commit: $PREVIOUS"
 
 # Everything below runs as the service user. Building as root would leave
 # root-owned files in .next that the service then cannot write.
-as_app() { sudo -u "$APP_USER" --preserve-env=NODE_OPTIONS bash -lc "cd $APP_DIR && $*"; }
-
-# The scripts need the real environment; the build does not need the secrets but
-# does need NODE_ENV.
-load_env() { set -a; . "$ENV_FILE"; set +a; }
-load_env
+#
+# The environment is sourced INSIDE the sudo shell, not outside it. sudo resets the
+# environment by default, so sourcing the file in this script and then calling sudo
+# hands the child a shell with no DB_USER and no DB_PASSWORD — which fails as
+# "DB_USER and DB_NAME are not set" at the migrate step, after a five minute build,
+# which is exactly how this was found. The service user can read the file because
+# it is 0640 root:roadmap.
+as_app() {
+  sudo -u "$APP_USER" bash -lc "set -a; . '$ENV_FILE'; set +a; cd '$APP_DIR' && $*"
+}
 
 say "Ownership"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
