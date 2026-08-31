@@ -249,7 +249,24 @@ if ! command -v caddy >/dev/null 2>&1; then
   die "caddy is not installed; this host was expected to already be running it"
 fi
 mkdir -p /etc/caddy/conf.d /var/log/caddy
+
+# The log file is created here, deliberately, with the right owner and the right
+# SELinux label.
+#
+# Without this the deploy fails in a way that takes a while to read. `caddy
+# validate` below runs as root and, in loading the config, OPENS the access log —
+# which creates /var/log/caddy/roadmap.log owned by root and labelled var_log_t.
+# Caddy itself runs as the caddy user under SELinux and needs httpd_log_t, so the
+# subsequent `systemctl reload caddy` fails with "permission denied" on a file
+# whose mode looks perfectly reasonable, and the site never comes up.
+touch /var/log/caddy/roadmap.log
 chown -R caddy:caddy /var/log/caddy 2>/dev/null || true
+chmod 0640 /var/log/caddy/roadmap.log
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon -R /var/log/caddy || true
+  ok "SELinux context restored on /var/log/caddy"
+fi
+ok "/var/log/caddy ready for the caddy user"
 
 # The existing Caddyfile serves another site and contains a credential. Back it
 # up before touching it, every time, with a timestamp.

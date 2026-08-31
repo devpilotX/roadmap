@@ -153,9 +153,22 @@ if [[ "$HEALTH" != *'"db":"up"'* ]]; then
 fi
 
 say "Reload Caddy"
+# `caddy validate` runs as root and opens the access log, which can leave it
+# root-owned and labelled var_log_t. Caddy runs as the caddy user and needs
+# httpd_log_t, so repair both before reloading or the reload fails with a
+# permission denied on a file whose mode looks fine. See provision.sh.
+chown -R caddy:caddy /var/log/caddy 2>/dev/null || true
+command -v restorecon >/dev/null 2>&1 && restorecon -R /var/log/caddy 2>/dev/null || true
+
 if caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
-  systemctl reload caddy
-  ok "caddy reloaded"
+  chown -R caddy:caddy /var/log/caddy 2>/dev/null || true
+  command -v restorecon >/dev/null 2>&1 && restorecon -R /var/log/caddy 2>/dev/null || true
+  if systemctl reload caddy; then
+    ok "caddy reloaded"
+  else
+    warn "caddy reload failed; the app is healthy but the public site may be stale"
+    journalctl -u caddy -n 15 --no-pager | grep -i error | tail -3 || true
+  fi
 else
   warn "caddy configuration is invalid, NOT reloading"
   caddy validate --config /etc/caddy/Caddyfile || true
