@@ -39,3 +39,9 @@ npm-debug.log*
 # Generated SQL from the parser is committed on purpose: migrations/*.sql is the
 # reviewable output of scripts/seed-from-md.mjs, and a diff on it is how a change
 # to final.md becomes visible. Nothing here excludes it.
+
+# Created by npm when it runs as the deployment service user, whose home directory
+# is the application directory itself (see deploy/provision.sh). Caches, not source.
+.npm/
+.config/
+.cache/
