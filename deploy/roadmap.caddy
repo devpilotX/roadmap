@@ -1,0 +1,64 @@
+#
+# /etc/caddy/conf.d/roadmap.caddy
+#
+# Dropped in beside the existing site rather than edited into the main Caddyfile,
+# so the service already running on this box cannot be broken by a deploy. The
+# main /etc/caddy/Caddyfile needs one line for this to be read:
+#
+#     import /etc/caddy/conf.d/*.caddy
+#
+# Caddy obtains and renews the certificate itself. Nothing here does ACME by hand,
+# and there is no cron job for renewal, because there does not need to be. The DNS
+# record for roadmap.devpilotx.com must resolve to this host and must NOT be
+# proxied by a CDN, or the HTTP-01 challenge cannot complete.
+#
+#   caddy validate --config /etc/caddy/Caddyfile   # before reloading
+#   systemctl reload caddy                         # zero downtime
+#
+
+roadmap.devpilotx.com {
+	encode zstd gzip
+
+	log {
+		output file /var/log/caddy/roadmap.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format console
+	}
+
+	reverse_proxy 127.0.0.1:3200 {
+		# X-Forwarded-For is REPLACED, not appended to.
+		#
+		# This matters. The application runs with TRUST_PROXY=1, which tells it to
+		# believe this header when deciding which visitor a login attempt belongs
+		# to. Caddy's default is to append the peer address to whatever the client
+		# sent, so a caller who sends their own X-Forwarded-For lands first in the
+		# list and can present a different identity on every request — which is
+		# exactly how a per address rate limit gets bypassed. Overwriting it with
+		# the real peer address makes the header trustworthy, which is the
+		# precondition for TRUST_PROXY=1 being safe at all.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+
+		# Caddy sets X-Forwarded-Proto and X-Forwarded-Host itself. It is stated
+		# explicitly because the application builds absolute URLs for the ICS feed
+		# and the web manifest, and a wrong scheme there produces links that fail
+		# only on somebody else's phone.
+		header_up X-Forwarded-Proto https
+
+		# The app answers this without a session, and returns 503 when MySQL is
+		# unreachable, so Caddy can stop sending traffic to a process that cannot
+		# serve it.
+		health_uri /api/healthz
+		health_interval 30s
+		health_timeout 5s
+		health_status 2xx
+	}
+
+	# Security headers come from the application: next.config.ts sets the static
+	# ones including HSTS, and middleware.ts sets the Content-Security-Policy with
+	# a per request nonce. They are deliberately NOT duplicated here, because two
+	# sources for one header is how a policy silently becomes two conflicting
+	# policies.
+}
