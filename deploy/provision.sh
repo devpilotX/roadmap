@@ -158,7 +158,16 @@ fi
 mkdir -p "$APP_DIR" "$APP_DIR/backups" "$ENV_DIR"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 0750 "$APP_DIR"
-chmod 0700 "$ENV_DIR"
+# 0750 root:roadmap, not 0700 root:root.
+#
+# systemd reads the EnvironmentFile as root before it drops privileges, so the
+# service starts either way. Everything else does not: deploy/release.sh and all
+# five cron jobs run as the service user and source this file directly, and a
+# directory the service user cannot TRAVERSE gives "Permission denied" on a file
+# whose own mode is perfectly correct. Group execute on the directory is what
+# makes the 0640 group-readable file below actually reachable.
+chown root:"$APP_USER" "$ENV_DIR"
+chmod 0750 "$ENV_DIR"
 ok "$APP_DIR and $ENV_DIR ready"
 
 # --------------------------------------------------------------- 5. environment
