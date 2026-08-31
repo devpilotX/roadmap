@@ -122,6 +122,27 @@ const rawSessionSecret = process.env.SESSION_SECRET ?? '';
 export const ROADMAP = Object.freeze({
   firstDay: '2026-08-28',
   lastDay: '2027-01-24',
+  /**
+   * The day scoring begins for a new account.
+   *
+   * This is NOT the same thing as `firstDay`, and the difference matters.
+   * `firstDay` is the immutable edge of the 150 day window: Appendix C of
+   * final.md lists every date, the four gates sit on named dates, and
+   * `npm run verify` enforces all of it. It cannot move.
+   *
+   * This is the per person start, stored on `profiles.roadmap_start` and read by
+   * `startedOn()` in lib/db/progress.ts. Days inside the window but before it are
+   * neutral: not green, not red, and they raise no warnings. So it decides where
+   * the streak and the day colours begin, not what the plan contains.
+   *
+   * 2026-08-31 is deliberate. 28, 29 and 30 August are the three launch days, and
+   * 31 August is the first study day of week 1 — the first date with a DSA target
+   * against it. Starting here means the three launch days are recorded as neutral
+   * rather than opening the tracker with three unearned red days.
+   *
+   * Changeable at any time on /profile without touching this file.
+   */
+  defaultStartDay: '2026-08-31',
   gate3Date: '2026-12-13',
   totalDays: 150,
   totalWeeks: 21,

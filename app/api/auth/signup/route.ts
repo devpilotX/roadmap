@@ -58,7 +58,11 @@ export const POST = publicRoute(async ({ request, session }) => {
     await tx.run(
       `INSERT INTO profiles (user_id, full_name, roadmap_start, roadmap_end, timezone)
        VALUES (?, ?, ?, ?, ?)`,
-      [id, displayName, config.roadmap.firstDay, config.roadmap.lastDay, config.timezone]
+      // roadmap_start is defaultStartDay, not firstDay. The window still runs from
+      // 28 August, but scoring starts on the first study day, so the three launch
+      // days are neutral instead of three red days nobody earned. Changeable on
+      // /profile. roadmap_end stays lastDay, which final.md fixes.
+      [id, displayName, config.roadmap.defaultStartDay, config.roadmap.lastDay, config.timezone]
     );
     await tx.run('INSERT INTO user_settings (user_id) VALUES (?)', [id]);
     await tx.run(
