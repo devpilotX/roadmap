@@ -62,20 +62,42 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 ok "$APP_DIR owned by $APP_USER"
 
 say "Dependencies"
+# --include=dev is NOT redundant, and leaving it off cost a deploy.
+#
+# The environment file sets NODE_ENV=production, and `npm ci` honours that by
+# omitting devDependencies exactly as though --omit=dev had been passed. tsx and
+# typescript are devDependencies, and tsx is what runs the migrations, the seed
+# verification and all five cron jobs. Without this flag the install silently
+# produces a host where the app builds and every scheduled job fails at 02:30.
+#
 # --no-audit --no-fund keeps the output readable and avoids two network calls that
-# can hang on a constrained box. Dev dependencies are installed on purpose.
-if ! as_app "npm ci --no-audit --no-fund"; then
+# can hang on a constrained box.
+if ! as_app "npm ci --include=dev --no-audit --no-fund"; then
   warn "npm ci failed, retrying once with the cache cleaned"
   as_app "npm cache clean --force" || true
-  as_app "npm ci --no-audit --no-fund" || die "npm ci failed twice"
+  as_app "npm ci --include=dev --no-audit --no-fund" || die "npm ci failed twice"
 fi
-ok "dependencies installed"
+as_app "test -d node_modules/tsx" \
+  || die "tsx is missing after npm ci; the migrations and every cron job need it"
+ok "dependencies installed, tsx present"
 
 say "Build"
 # 946 MB of RAM, 6 GB of swap. The build is the most memory hungry thing that ever
 # runs on this box, so the heap is bounded and the failure is explained rather than
 # appearing as a silent kill by earlyoom.
-if ! as_app "NODE_ENV=production NODE_OPTIONS=--max-old-space-size=512 npm run build"; then
+#
+# A stale webpack cache left behind by an interrupted or differently-owned build
+# produces a stream of ENOENT rename warnings and can wedge the build. It is a
+# cache; deleting it costs one slower build.
+as_app "rm -rf .next/cache" || true
+#
+# NEXT_SKIP_HOST_CHECKS=1 skips the lint and type check that next build would run.
+# See the comment in next.config.ts: on this host those two took the machine into
+# 1.3 GB of swap at 8% CPU, and they can tell us nothing that `npm run typecheck`
+# and `npm run lint` have not already established on the authoring machine. The
+# checks that can ONLY be made here — migrations, seed contract, health — are run
+# below and abort the deploy.
+if ! as_app "NODE_ENV=production NEXT_SKIP_HOST_CHECKS=1 NODE_OPTIONS=--max-old-space-size=512 npm run build"; then
   warn "the build failed; if it was killed, that is memory. Checking:"
   dmesg 2>/dev/null | tail -5 | grep -i -E 'killed process|out of memory' || true
   journalctl -t earlyoom -n 5 --no-pager 2>/dev/null || true
@@ -120,8 +142,10 @@ if [[ "$HEALTH" != *'"db":"up"'* ]]; then
     warn "rolling back to $PREVIOUS"
     git -C "$APP_DIR" reset --hard "$PREVIOUS"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-    as_app "npm ci --no-audit --no-fund" || true
-    as_app "NODE_ENV=production npm run build" || true
+    # Same flags as the forward path. A rollback that installs a different
+    # dependency tree than the deploy did is not a rollback.
+    as_app "npm ci --include=dev --no-audit --no-fund" || true
+    as_app "NODE_ENV=production NEXT_SKIP_HOST_CHECKS=1 npm run build" || true
     systemctl restart "$SERVICE" || true
     warn "rolled back; the previous version is running again"
   fi
